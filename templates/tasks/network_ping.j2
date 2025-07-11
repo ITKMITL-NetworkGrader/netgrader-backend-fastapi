@@ -1,0 +1,29 @@
+- name: "Test {{ test_id }} - Ping from {{ source_device }} to {{ target_device }}"
+  ansible.netcommon.net_ping:
+    dest: "{{ target_ip | default(target_device) }}"
+    count: "{{ ping_count | default(3) }}"
+  register: ping_result
+  delegate_to: "{{ source_device }}"
+  when: source_device is defined
+  tags:
+    - test_id:{{ test_id }}
+    - points:{{ points }}
+  
+- name: "Evaluate ping test {{ test_id }}"
+  debug:
+    msg: |
+      {% if expected_result == "success" %}
+      Ping test passed: {{ source_device }} can reach {{ target_device }}
+      {% else %}
+      Ping test failed: {{ source_device }} cannot reach {{ target_device }}
+      {% endif %}
+  failed_when: >
+    {% if expected_result == "success" %}
+    ping_result.failed or (ping_result.packet_loss | default(100) | int) > {{ max_packet_loss | default(0) }}
+    {% else %}
+    not ping_result.failed and (ping_result.packet_loss | default(0) | int) == 0
+    {% endif %}
+  when: source_device is defined
+  tags:
+    - test_id:{{ test_id }}
+    - points:{{ points }}

@@ -1,0 +1,32 @@
+- name: "Test {{ test_id }} - Check IP configuration on {{ target_device }}"
+  shell: |
+    {% if interface_name is defined %}
+    ip addr show {{ interface_name }}
+    {% else %}
+    ip addr show
+    {% endif %}
+  register: ip_result
+  delegate_to: "{{ target_device }}"
+  tags:
+    - test_id:{{ test_id }}
+    - points:{{ points }}
+
+- name: "Evaluate Linux IP test {{ test_id }}"
+  debug:
+    msg: |
+      {% if expected_ip is defined %}
+      Checking if {{ target_device }} has IP {{ expected_ip }}
+      {% else %}
+      Checking IP configuration on {{ target_device }}
+      {% endif %}
+  failed_when: >
+    {% if expected_ip is defined %}
+    expected_ip not in ip_result.stdout
+    {% elif interface_up is defined and interface_up %}
+    'UP' not in ip_result.stdout or 'state UP' not in ip_result.stdout
+    {% else %}
+    ip_result.rc != 0
+    {% endif %}
+  tags:
+    - test_id:{{ test_id }}
+    - points:{{ points }}

@@ -1,0 +1,31 @@
+- name: "Test {{ test_id }} - SSH connectivity from {{ source_device }} to {{ target_device }}"
+  shell: |
+    ssh -o ConnectTimeout={{ timeout | default(10) }} \
+        -o StrictHostKeyChecking=no \
+        -o UserKnownHostsFile=/dev/null \
+        {{ target_user | default('root') }}@{{ target_ip | default(target_device) }} \
+        "echo 'SSH connection successful'"
+  register: ssh_result
+  delegate_to: "{{ source_device }}"
+  ignore_errors: true
+  tags:
+    - test_id:{{ test_id }}
+    - points:{{ points }}
+
+- name: "Evaluate SSH connectivity test {{ test_id }}"
+  debug:
+    msg: |
+      {% if expected_result == "success" %}
+      SSH test passed: {{ source_device }} can SSH to {{ target_device }}
+      {% else %}
+      SSH test failed: {{ source_device }} cannot SSH to {{ target_device }}
+      {% endif %}
+  failed_when: >
+    {% if expected_result == "success" %}
+    ssh_result.rc != 0 or 'SSH connection successful' not in ssh_result.stdout
+    {% else %}
+    ssh_result.rc == 0 and 'SSH connection successful' in ssh_result.stdout
+    {% endif %}
+  tags:
+    - test_id:{{ test_id }}
+    - points:{{ points }}

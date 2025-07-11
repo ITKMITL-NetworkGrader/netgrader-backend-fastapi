@@ -1,0 +1,7 @@
+---
+- name: "Dynamic Lab Grader for Job {{ job_id }}"
+  hosts: all
+  gather_facts: false
+
+  tasks:
+    {{ tasks_block | indent(4) }}

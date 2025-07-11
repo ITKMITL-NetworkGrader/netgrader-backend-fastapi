@@ -1,0 +1,32 @@
+- name: "Test {{ test_id }} - Check ACL configuration on {{ target_device }}"
+  ansible.netcommon.net_get:
+    command: "{{ show_acl_command | default('show access-lists') }}"
+  register: acl_result
+  delegate_to: "{{ target_device }}"
+  tags:
+    - test_id:{{ test_id }}
+    - points:{{ points }}
+
+- name: "Evaluate ACL test {{ test_id }}"
+  debug:
+    msg: |
+      {% if acl_name is defined %}
+      Checking for ACL: {{ acl_name }}
+      {% elif acl_rule is defined %}
+      Checking for ACL rule: {{ acl_rule }}
+      {% else %}
+      Checking ACL configuration
+      {% endif %}
+  failed_when: >
+    {% if acl_name is defined %}
+    acl_name not in acl_result.stdout
+    {% elif acl_rule is defined %}
+    acl_rule not in acl_result.stdout
+    {% elif acl_count is defined %}
+    (acl_result.stdout | regex_findall('access-list') | length) < {{ acl_count }}
+    {% else %}
+    acl_result.failed
+    {% endif %}
+  tags:
+    - test_id:{{ test_id }}
+    - points:{{ points }}
