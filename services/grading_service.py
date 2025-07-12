@@ -24,7 +24,8 @@ class GradingService:
     def __init__(self):
         self.api_client = APIClient()
         self.templates_dir = Path(config.TEMPLATES_DIR)
-        self.jinja_env = Environment(loader=FileSystemLoader(self.templates_dir))
+        self.jinja_env = Environment(loader=FileSystemLoader(self.templates_dir),variable_start_string="((" ,
+    variable_end_string="))",)
         
         # Ensure directories exist
         os.makedirs(config.ANSIBLE_INVENTORY_DIR, exist_ok=True)

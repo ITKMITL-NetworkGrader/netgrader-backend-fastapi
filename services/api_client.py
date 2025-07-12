@@ -24,7 +24,7 @@ class APIClient:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 response = await client.post(
                     f"{callback_url}/progress",
-                    json=progress.dict(),
+                    json=progress.model_dump(),
                     headers={"Content-Type": "application/json"}
                 )
                 response.raise_for_status()
@@ -45,7 +45,7 @@ class APIClient:
                 async with httpx.AsyncClient(timeout=self.timeout) as client:
                     response = await client.post(
                         f"{callback_url}/result",
-                        json=result.dict(),
+                        json=result.model_dump(),
                         headers={"Content-Type": "application/json"}
                     )
                     response.raise_for_status()
