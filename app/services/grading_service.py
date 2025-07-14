@@ -15,7 +15,6 @@ from app.schemas.models import (
 )
 from app.core.config import config
 from app.services.api_client import APIClient
-import pprint
 
 logger = logging.getLogger(__name__)
 
@@ -98,7 +97,6 @@ class GradingService:
                 "ansible_host": device.ip_address,
                 "ansible_connection": device.connection_type.value
             }
-            print(host_config)
             if device.username:
                 host_config["ansible_user"] = device.username
             if device.password:
@@ -221,7 +219,6 @@ class GradingService:
                 )
                 await self.api_client.send_progress_update(job.callback_url, progress)
             private_data_dir = tempfile.mkdtemp(prefix=f"ansible_runner_{job.job_id}_")
-            print(f"Temporary directory created 1: {private_data_dir}")
         # Run ansible playbook
             runner_result = await asyncio.get_event_loop().run_in_executor(
                 None,
@@ -244,12 +241,10 @@ class GradingService:
             import shutil
             # Clean up temporary directory
             shutil.rmtree(private_data_dir, ignore_errors=True)
-            print(f"Temporary directory created 3 (end): {private_data_dir}")
 
     
     def _run_ansible_playbook(self, playbook_path: str, inventory_path: str, private_data_dir: str) -> Any:
         """Run Ansible playbook synchronously"""
-        print(f"Temporary directory created 2: {private_data_dir}")
         
         result = ansible_runner.run(
                 playbook=playbook_path,
@@ -280,9 +275,7 @@ class GradingService:
             for event in runner_result.events:
                 if event.get('event') == 'runner_on_ok' or event.get('event') == 'runner_on_failed':
                     task_name = event.get('event_data', {}).get('task', '')
-                    print(f"Checking task: {task_name} for test {test.test_id}")
                     if test.test_id in task_name:
-                        print(f"Found matching task for test {test.test_id}")
                         test_result = self._parse_test_event(test, event)
                         break
             test_results.append(test_result)
