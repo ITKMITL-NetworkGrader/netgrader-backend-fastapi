@@ -3,9 +3,9 @@ import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from models import GradingJob
-from services.queue_consumer import consumer, start_consumer, stop_consumer
-from config import config
+from app.schemas.models import GradingJob
+from app.services.queue_consumer import consumer, start_consumer, stop_consumer
+from app.core.config import config
 
 # Configure logging
 logging.basicConfig(
@@ -38,7 +38,15 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="NetGrader Worker API",
-    description="FastAPI worker service for automated network lab grading",
+    description="""
+    FastAPI worker service for automated network lab grading
+    
+    Core Features:
+    1. Job Consumption - Constantly listening to RabbitMQ queue
+    2. Dynamic Playbook Generation - Jinja2 templates create Ansible playbooks in-memory
+    3. Execution - ansible-runner executes playbooks against lab environments
+    4. Real-Time Feedback - Streams progress updates via API callbacks
+    """,
     version="1.0.0",
     lifespan=lifespan
 )
@@ -58,7 +66,13 @@ def root():
     return {
         "message": "NetGrader Worker API", 
         "status": "running",
-        "version": "1.0.0"
+        "version": "1.0.0",
+        "core_features": [
+            "Job Consumption (RabbitMQ)",
+            "Dynamic Playbook Generation (Jinja2)",
+            "Execution (ansible-runner)",
+            "Real-Time Feedback (API callbacks)"
+        ]
     }
 
 @app.get("/health")

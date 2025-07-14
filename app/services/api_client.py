@@ -2,8 +2,8 @@ import httpx
 import asyncio
 import logging
 from typing import Optional
-from models import ProgressUpdate, GradingResult
-from config import config
+from app.schemas.models import ProgressUpdate, GradingResult
+from app.core.config import config
 
 logger = logging.getLogger(__name__)
 

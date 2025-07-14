@@ -9,12 +9,13 @@ from typing import Dict, List, Optional, Any
 from pathlib import Path
 import ansible_runner
 from jinja2 import Environment, FileSystemLoader, Template
-from models import (
+from app.schemas.models import (
     GradingJob, TestResult, GradingResult, ProgressUpdate, 
     Device, TestDefinition, ConnectionType
 )
-from config import config
-from services.api_client import APIClient
+from app.core.config import config
+from app.services.api_client import APIClient
+import pprint
 
 logger = logging.getLogger(__name__)
 
@@ -208,54 +209,56 @@ class GradingService:
     async def _execute_playbook(self, job: GradingJob, inventory_path: str, playbook_path: str, result: GradingResult) -> GradingResult:
         """Execute the Ansible playbook and parse results"""
         
-        # Send initial progress update
-        if job.callback_url:
-            progress = ProgressUpdate(
-                job_id=job.job_id,
-                status="executing",
-                message="Starting playbook execution",
-                tests_completed=0,
-                total_tests=len(job.topology.tests),
-                percentage=0.0
-            )
-            await self.api_client.send_progress_update(job.callback_url, progress)
-        
+        try:# Send initial progress update
+            if job.callback_url:
+                progress = ProgressUpdate(
+                    job_id=job.job_id,
+                    status="executing",
+                    message="Starting playbook execution",
+                    tests_completed=0,
+                    total_tests=len(job.topology.tests),
+                    percentage=0.0
+                )
+                await self.api_client.send_progress_update(job.callback_url, progress)
+            private_data_dir = tempfile.mkdtemp(prefix=f"ansible_runner_{job.job_id}_")
+            print(f"Temporary directory created 1: {private_data_dir}")
         # Run ansible playbook
-        runner_result = await asyncio.get_event_loop().run_in_executor(
-            None,
-            self._run_ansible_playbook,
-            playbook_path,
-            inventory_path,
-            job.job_id
-        )
+            runner_result = await asyncio.get_event_loop().run_in_executor(
+                None,
+                self._run_ansible_playbook,
+                playbook_path,
+                inventory_path,
+                private_data_dir
+            )
         
-        # Parse results
-        if runner_result.status == "successful":
-            result = await self._parse_ansible_results(job, runner_result, result)
-        else:
-            result.status = "failed"
-            result.error_message = f"Ansible execution failed: {runner_result.stdout}"
-            logger.error(f"Ansible execution failed for job {job.job_id}: {runner_result.stderr}")
+            # Parse results
+            if runner_result.status == "successful":
+                result = await self._parse_ansible_results(job, runner_result, result)
+            else:
+                result.status = "failed"
+                result.error_message = f"Ansible execution failed: {runner_result.stdout}"
+                logger.error(f"Ansible execution failed for job {job.job_id}: {runner_result.stderr}")
         
-        return result
+            return result
+        finally:
+            import shutil
+            # Clean up temporary directory
+            shutil.rmtree(private_data_dir, ignore_errors=True)
+            print(f"Temporary directory created 3 (end): {private_data_dir}")
+
     
-    def _run_ansible_playbook(self, playbook_path: str, inventory_path: str, job_id: str) -> Any:
+    def _run_ansible_playbook(self, playbook_path: str, inventory_path: str, private_data_dir: str) -> Any:
         """Run Ansible playbook synchronously"""
-        private_data_dir = tempfile.mkdtemp(prefix=f"ansible_runner_{job_id}_")
+        print(f"Temporary directory created 2: {private_data_dir}")
         
-        try:
-            result = ansible_runner.run(
+        result = ansible_runner.run(
                 playbook=playbook_path,
                 inventory=inventory_path,
                 private_data_dir=private_data_dir,
-                quiet=False,
-                verbosity=2
+                quiet=True,
+                # verbosity=2
             )
-            return result
-        finally:
-            # Clean up temporary directory
-            import shutil
-            shutil.rmtree(private_data_dir, ignore_errors=True)
+        return result
     
     async def _parse_ansible_results(self, job: GradingJob, runner_result: Any, result: GradingResult) -> GradingResult:
         """Parse Ansible execution results and generate test results"""
@@ -277,10 +280,11 @@ class GradingService:
             for event in runner_result.events:
                 if event.get('event') == 'runner_on_ok' or event.get('event') == 'runner_on_failed':
                     task_name = event.get('event_data', {}).get('task', '')
+                    print(f"Checking task: {task_name} for test {test.test_id}")
                     if test.test_id in task_name:
+                        print(f"Found matching task for test {test.test_id}")
                         test_result = self._parse_test_event(test, event)
                         break
-            
             test_results.append(test_result)
             tests_completed += 1
             
@@ -299,7 +303,6 @@ class GradingService:
         
         result.test_results = test_results
         result.total_points_earned = sum(tr.points_earned for tr in test_results)
-        
         return result
     
     def _parse_test_event(self, test: TestDefinition, event: Dict[str, Any]) -> TestResult:
@@ -309,7 +312,7 @@ class GradingService:
         
         # Determine if test passed or failed
         failed = event.get('event') == 'runner_on_failed' or task_result.get('failed', False)
-        
+
         if failed:
             status = "failed"
             points_earned = 0

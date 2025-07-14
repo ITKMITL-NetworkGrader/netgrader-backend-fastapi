@@ -7,7 +7,7 @@ import asyncio
 import subprocess
 import sys
 import aio_pika
-from config import config
+from app.core.config import config
 
 async def check_rabbitmq():
     """Check if RabbitMQ is accessible"""

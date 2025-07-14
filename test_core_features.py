@@ -6,7 +6,7 @@ import asyncio
 import json
 import httpx
 from datetime import datetime
-from models import GradingJob, Device, TestDefinition, LabTopology, ConnectionType
+from app.schemas.models import GradingJob, Device, TestDefinition, LabTopology, ConnectionType
 
 # Example test job
 def create_test_job():

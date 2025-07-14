@@ -4,14 +4,19 @@ import logging
 from typing import Optional
 import aio_pika
 from aio_pika import connect_robust, Message, IncomingMessage
-from models import GradingJob
-from services.grading_service import GradingService
-from config import config
+from app.schemas.models import GradingJob
+from app.services.grading_service import GradingService
+from app.core.config import config
 
 logger = logging.getLogger(__name__)
 
 class QueueConsumer:
-    """RabbitMQ consumer for processing grading jobs"""
+    """
+    Job Consumption: FastAPI worker constantly listening to RabbitMQ queue
+    
+    This class implements the core requirement of job consumption where the FastAPI worker
+    continuously listens to the RabbitMQ queue and picks up grading jobs as they arrive.
+    """
     
     def __init__(self):
         self.grading_service = GradingService()
@@ -49,12 +54,16 @@ class QueueConsumer:
             logger.info("Disconnected from RabbitMQ")
     
     async def start_consuming(self):
-        """Start consuming messages from the grading queue"""
+        """
+        Start consuming messages from the grading queue
+        Core Feature: Job Consumption - Worker constantly listening to queue
+        """
         if not self.queue:
             await self.connect()
         
         self.is_running = True
-        logger.info("Starting to consume grading jobs...")
+        logger.info("🚀 FastAPI Worker: Starting to consume grading jobs from RabbitMQ queue")
+        logger.info(f"📡 Listening on queue: {config.GRADING_QUEUE}")
         
         # Start consuming messages
         await self.queue.consume(self._process_message)
@@ -69,26 +78,31 @@ class QueueConsumer:
             await self.disconnect()
     
     async def _process_message(self, message: IncomingMessage):
-        """Process incoming grading job message"""
+        """
+        Process incoming grading job message
+        Core Feature: Job Consumption - Pick up and process jobs from queue
+        """
         async with message.process():
             try:
                 # Parse the job payload
                 job_data = json.loads(message.body.decode())
                 job = GradingJob(**job_data)
                 
-                logger.info(f"Received grading job: {job.job_id}")
+                logger.info(f"📥 Received grading job from queue: {job.job_id}")
+                logger.info(f"👨‍🎓 Student: {job.student_id} | 📚 Lab: {job.lab_name}")
+                logger.info(f"🧪 Tests to run: {len(job.topology.tests)}")
                 
-                # Process the grading job
+                # Process the grading job (triggers dynamic playbook generation and execution)
                 result = await self.grading_service.process_grading_job(job)
-                logger.info(f"Successfully processed job: {job.job_id}")
+                logger.info(f"✅ Successfully processed job: {job.job_id}")
                 
             except json.JSONDecodeError as e:
-                logger.error(f"Failed to parse job message: {e}")
+                logger.error(f"❌ Failed to parse job message: {e}")
                 logger.error(f"Message body: {message.body.decode()}")
                 # Don't requeue malformed messages
                 
             except Exception as e:
-                logger.error(f"Error processing grading job: {e}")
+                logger.error(f"❌ Error processing grading job: {e}")
                 # The message will be requeued automatically due to exception
                 raise
     
