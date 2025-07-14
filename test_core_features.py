@@ -16,7 +16,7 @@ def create_test_job():
     devices = [
         Device(
             hostname="router1",
-            ip_address="10.110.192.160",
+            ip_address="10.110.197.129",
             connection_type=ConnectionType.NETWORK_CLI,
             platform="cisco.ios.ios",
             username="admin",
@@ -41,7 +41,7 @@ def create_test_job():
             expected_result="success",
             parameters={
                 "interface_name": "GigabitEthernet1",
-                "expected_ip": "10.110.192.160"
+                "expected_ip": "10.110.197.129"
             },
             points=5,
         ),

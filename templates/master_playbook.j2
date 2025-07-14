@@ -2,6 +2,7 @@
 - name: "Dynamic Lab Grader for Job (( job_id ))"
   hosts: all
   gather_facts: false
-
+  vars:
+    (( var_block | indent(4) ))
   tasks:
     (( tasks_block | indent(4) ))

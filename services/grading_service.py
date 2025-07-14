@@ -74,10 +74,9 @@ class GradingService:
         # Calculate final execution time
         end_time = datetime.now()
         result.execution_time = (end_time - start_time).total_seconds()
-        print(result)
         # Send final result
-        # if job.callback_url:
-        #     await self.api_client.send_final_result(job.callback_url, result)
+        if job.callback_url:
+            await self.api_client.send_final_result(job.callback_url, result)
         
         logger.info(f"Completed grading job {job.job_id}. Score: {result.total_points_earned}/{result.total_points_possible}")
         return result
@@ -125,7 +124,6 @@ class GradingService:
     async def _generate_playbook(self, job: GradingJob) -> str:
         """Generate the master Ansible playbook with dynamic tasks"""
         tasks_content = []
-        
         for test in job.topology.tests:
             try:
                 task_content = await self._generate_task_from_template(test)
@@ -136,13 +134,15 @@ class GradingService:
                 tasks_content.append(self._generate_failure_task(test, str(e)))
         
         # Combine all tasks
+        vars_block = await self._generate_test_vars(test.parameters) if test.parameters else ""
         tasks_block = "\n".join(tasks_content)
         
         # Load and render master playbook template
         master_template = self.jinja_env.get_template("master_playbook.j2")
         playbook_content = master_template.render(
             job_id=job.job_id,
-            tasks_block=tasks_block
+            tasks_block=tasks_block,
+            var_block=vars_block
         )
         
         # Write playbook file
@@ -176,10 +176,22 @@ class GradingService:
             target_device=test.target_device,
             expected_result=test.expected_result,
             points=test.points,
-            **test.parameters
         )
         
         return task_content
+    
+    async def _generate_test_vars(self, test_parameters: Dict[str, Any]) -> str:
+        """Generate variables for the test based on its parameters"""
+        test_vars = []
+        for key, value in test_parameters.items():
+            if isinstance(value, str):
+                test_vars.append(f"{key}: '{value}'")
+            elif isinstance(value, bool):
+                test_vars.append(f"{key}: {str(value).lower()}")
+            else:
+                test_vars.append(f"{key}: {value}")
+        test_vars_str = "\n".join(test_vars)
+        return test_vars_str
     
     def _generate_failure_task(self, test: TestDefinition, error_message: str) -> str:
         """Generate a task that will mark the test as failed"""

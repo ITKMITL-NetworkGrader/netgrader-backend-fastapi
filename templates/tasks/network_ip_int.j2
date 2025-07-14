@@ -5,6 +5,7 @@
         gather_subset:
           - interfaces
       register: interface_facts
+      delegate_to: "(( target_device ))"
 
   rescue:
     - name: "Attempt 2: Set legacy args and retry on SSH failure"
@@ -17,11 +18,12 @@
         gather_subset:
           - interfaces
       register: interface_facts
+      delegate_to: "(( target_device ))"
   tags:
     - test_id:(( test_id ))
     - points:(( points ))
 
-- name: "Extract the actual IP from (( interface_name ))"
+- name: "Extract the actual IP from {{ interface_name }}"
   set_fact:
     actual_ip: "{{ interface_facts.ansible_facts.ansible_net_interfaces[interface_name].ipv4[0].address }}"
   when:
@@ -30,18 +32,14 @@
     - interface_facts.ansible_facts.ansible_net_interfaces[interface_name].ipv4 | length > 0
 
 - name: "Assert: Check if the actual IP matches the expected IP"
-  # The 'assert' module is perfect for validation checks
   assert:
     that:
-      # This is the core comparison logic
       - actual_ip == expected_ip
-    success_msg: "SUCCESS: IP on (( interface_name )) is {{ actual_ip }}, which matches the expected IP."
-    fail_msg: "FAILURE: IP on (( interface_name )) is {{ actual_ip }}, but we expected (( expected_ip ))."
-  # This task only runs if we successfully found an IP in the previous task
+    success_msg: "SUCCESS: IP on {{ interface_name }} is {{ actual_ip }}, which matches the expected IP."
+    fail_msg: "FAILURE: IP on {{ interface_name }} is {{ actual_ip }}, but we expected {{ expected_ip }}."
   when: actual_ip is defined
 
 - name: "Report that the interface has no IP address"
   debug:
-    msg: "INFO: Could not find an IPv4 address on interface (( interface_name ))."
-  # This task runs only if the 'actual_ip' variable was never created
+    msg: "INFO: Could not find an IPv4 address on interface {{ interface_name }}."
   when: actual_ip is not defined
