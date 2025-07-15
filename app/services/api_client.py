@@ -22,12 +22,13 @@ class APIClient:
             
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
+                print(f"{callback_url}/progress")
                 response = await client.post(
                     f"{callback_url}/progress",
                     json=progress.model_dump(),
                     headers={"Content-Type": "application/json"}
                 )
-                response.raise_for_status()
+                # response.raise_for_status()
                 logger.info(f"Progress update sent for job {progress.job_id}: {progress.message}")
                 return True
         except Exception as e:
@@ -43,12 +44,13 @@ class APIClient:
         for attempt in range(self.max_retries):
             try:
                 async with httpx.AsyncClient(timeout=self.timeout) as client:
+                    print(f"{callback_url}/result")
                     response = await client.post(
                         f"{callback_url}/result",
                         json=result.model_dump(),
                         headers={"Content-Type": "application/json"}
                     )
-                    response.raise_for_status()
+                    # response.raise_for_status()
                     logger.info(f"Final result sent for job {result.job_id}")
                     return True
             except Exception as e:
@@ -66,12 +68,13 @@ class APIClient:
             
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
+                print(f"{callback_url}/started")
                 response = await client.post(
                     f"{callback_url}/started",
                     json={"job_id": job_id, "status": "started"},
                     headers={"Content-Type": "application/json"}
                 )
-                response.raise_for_status()
+                # response.raise_for_status()
                 logger.info(f"Job started notification sent for job {job_id}")
                 return True
         except Exception as e:

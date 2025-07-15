@@ -14,7 +14,8 @@ from app.schemas.models import (
     Device, TestDefinition, ConnectionType
 )
 from app.core.config import config
-from app.services.api_client import APIClient
+# from app.services.api_client import APIClient
+from app.services.api_client_request import ApiClient
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +23,7 @@ class GradingService:
     """Core service that generates Ansible playbooks and executes grading jobs"""
     
     def __init__(self):
-        self.api_client = APIClient()
+        self.api_client = ApiClient("http://10.110.197.111:4000/v0/grading")
         self.templates_dir = Path(config.TEMPLATES_DIR)
         self.jinja_env = Environment(loader=FileSystemLoader(self.templates_dir),variable_start_string="((" ,
     variable_end_string="))",)
@@ -50,7 +51,8 @@ class GradingService:
         try:
             # Notify job started
             if job.callback_url:
-                await self.api_client.notify_job_started(job.callback_url, job.job_id)
+                print(f"{type(job.callback_url)} : {job.callback_url}")
+                self.api_client.callback("/started", {"job_id": job.job_id, "status": "started"})
             
             # Generate inventory file
             inventory_path = await self._generate_inventory(job)
@@ -76,7 +78,7 @@ class GradingService:
         result.execution_time = (end_time - start_time).total_seconds()
         # Send final result
         if job.callback_url:
-            await self.api_client.send_final_result(job.callback_url, result)
+            self.api_client.callback("/result", result.model_dump())
         
         logger.info(f"Completed grading job {job.job_id}. Score: {result.total_points_earned}/{result.total_points_possible}")
         return result
@@ -217,7 +219,7 @@ class GradingService:
                     total_tests=len(job.topology.tests),
                     percentage=0.0
                 )
-                await self.api_client.send_progress_update(job.callback_url, progress)
+                self.api_client.callback("/progress", progress.model_dump())
             private_data_dir = tempfile.mkdtemp(prefix=f"ansible_runner_{job.job_id}_")
         # Run ansible playbook
             runner_result = await asyncio.get_event_loop().run_in_executor(
@@ -292,7 +294,7 @@ class GradingService:
                     total_tests=len(job.topology.tests),
                     percentage=(tests_completed / len(job.topology.tests)) * 100
                 )
-                await self.api_client.send_progress_update(job.callback_url, progress)
+                self.api_client.callback("/progress", progress.model_dump())
         
         result.test_results = test_results
         result.total_points_earned = sum(tr.points_earned for tr in test_results)

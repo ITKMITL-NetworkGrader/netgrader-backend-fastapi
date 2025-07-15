@@ -18,8 +18,8 @@ class Device(BaseModel):
 
 class TestDefinition(BaseModel):
     test_id: str
-    test_type: str  # e.g., "network_ping", "linux_ip_check", "custom"
-    template_name: str  # corresponds to Jinja2 template file
+    test_type: str
+    template_name: str
     parameters: Dict[str, Any] = Field(default_factory=dict)
     source_device: Optional[str] = None
     target_device: Optional[str] = None
@@ -36,7 +36,7 @@ class GradingJob(BaseModel):
     lab_name: str
     student_id: str
     topology: LabTopology
-    callback_url: Optional[str] = None  # URL to send progress updates
+    callback_url: Optional[str] = ""  # URL to send progress updates
     total_points: int = Field(default=0)
 
 class TestResult(BaseModel):
@@ -46,7 +46,7 @@ class TestResult(BaseModel):
     points_earned: int
     points_possible: int
     execution_time: float
-    raw_output: Optional[str] = None
+    raw_output: Optional[str] = ""  
 
 class GradingResult(BaseModel):
     job_id: str
@@ -55,15 +55,15 @@ class GradingResult(BaseModel):
     total_points_possible: int
     test_results: List[TestResult]
     execution_time: float
-    error_message: Optional[str] = None
+    error_message: Optional[str] = ""
     created_at: str
-    completed_at: Optional[str] = None
+    completed_at: Optional[str] = ""
 
 class ProgressUpdate(BaseModel):
     job_id: str
     status: str
     message: str
-    current_test: Optional[str] = None
+    current_test: Optional[str] = ""
     tests_completed: int
     total_tests: int
     percentage: float
