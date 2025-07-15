@@ -1,8 +1,17 @@
 ---
-- name: "Dynamic Lab Grader for Job (( job_id ))"
-  hosts: all
-  gather_facts: false
+{% for test in tests %}
+- name: "Execute Test: {{ test.name }}"
+  hosts: "{{ test.target_device | join(',') }}"
+  gather_facts: no
   vars:
-    (( var_block | indent(4) ))
+    test_id: "{{ test.name }}"
+    points: {{ test.points | default(10) }}
+    {% for key, value in test.vars.items() %}
+    {{ key }}: {{ value | tojson }}
+    {% endfor %}
+
   tasks:
-    (( tasks_block | indent(4) ))
+{% filter indent(4) %}
+{% include 'tasks/' + test.template %}
+{% endfilter %}
+{% endfor %}

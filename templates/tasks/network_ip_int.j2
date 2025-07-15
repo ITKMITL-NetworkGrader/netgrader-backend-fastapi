@@ -1,3 +1,4 @@
+{% raw %}
 - name: Attempt connection and gather facts
   block:
     - name: "Attempt 1: Try connecting with modern SSH"
@@ -5,7 +6,6 @@
         gather_subset:
           - interfaces
       register: interface_facts
-      delegate_to: "(( target_device ))"
 
   rescue:
     - name: "Attempt 2: Set legacy args and retry on SSH failure"
@@ -18,10 +18,6 @@
         gather_subset:
           - interfaces
       register: interface_facts
-      delegate_to: "(( target_device ))"
-  tags:
-    - test_id:(( test_id ))
-    - points:(( points ))
 
 - name: "Extract the actual IP from {{ interface_name }}"
   set_fact:
@@ -31,7 +27,7 @@
     - interface_facts.ansible_facts.ansible_net_interfaces[interface_name].ipv4 is defined
     - interface_facts.ansible_facts.ansible_net_interfaces[interface_name].ipv4 | length > 0
 
-- name: "(( test_id )) Assert: Check if the actual IP matches the expected IP"
+- name: "Assert: Check if the actual IP matches the expected IP"
   assert:
     that:
       - actual_ip == expected_ip
@@ -43,3 +39,4 @@
   debug:
     msg: "INFO: Could not find an IPv4 address on interface {{ interface_name }}."
   when: actual_ip is not defined
+{% endraw %}

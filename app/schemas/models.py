@@ -17,14 +17,24 @@ class Device(BaseModel):
     ssh_key_path: Optional[str] = None
 
 class TestDefinition(BaseModel):
-    test_id: str
-    test_type: str
-    template_name: str
-    parameters: Dict[str, Any] = Field(default_factory=dict)
-    source_device: Optional[str] = None
-    target_device: Optional[str] = None
-    expected_result: Optional[str] = None
-    points: int = 1
+    name: str = Field(..., description="A human-readable name for the test.")
+    template: str = Field(
+        ...,
+        description="The filename of the Jinja2 task template, e.g., 'ping.yml.j2'.",
+    )
+    target_device: Optional[List[str]] = Field(
+        ...,
+        description="A list of inventory hostnames this test should run against.",
+    )
+    vars: Optional[Dict[str, Any]] = Field(
+        default_factory=dict,
+        description="Variables to be passed to the Ansible task template.",
+    )
+    expected_result: Optional[str] = Field(
+        default=None,
+        description="Expected result of the test (e.g., 'success', 'failure').",
+    )
+    points: int = Field(default=1, description="Points awarded for passing this test")
 
 class LabTopology(BaseModel):
     devices: List[Device]
@@ -40,7 +50,7 @@ class GradingJob(BaseModel):
     total_points: int = Field(default=0)
 
 class TestResult(BaseModel):
-    test_id: str
+    test_name: str
     status: str  # "passed", "failed", "error"
     message: str
     points_earned: int

@@ -1,29 +1,31 @@
-- name: "Test {{ test_id }} - Ping from {{ source_device }} to {{ target_device }}"
+{% raw %}
+- name: "Ping test to {{ target_ip | default(target_device) }} from network device"
   ansible.netcommon.net_ping:
     dest: "{{ target_ip | default(target_device) }}"
     count: "{{ ping_count | default(3) }}"
   register: ping_result
-  delegate_to: "{{ source_device }}"
-  when: source_device is defined
-  tags:
-    - test_id:{{ test_id }}
-    - points:{{ points }}
-  
-- name: "Evaluate ping test {{ test_id }}"
+  when: ansible_network_os is defined
+
+- name: "Ping test to {{ target_ip | default(target_device) }} from Linux server"
+  ansible.builtin.shell: "ping -c {{ ping_count | default(3) }} {{ target_ip | default(target_device) }}"
+  register: ping_result
+  when: ansible_network_os is not defined
+  ignore_errors: true
+
+- name: "Evaluate ping test"
   debug:
     msg: |
+{% endraw %}
       {% if expected_result == "success" %}
-      Ping test passed: {{ source_device }} can reach {{ target_device }}
+      Ping test passed: can reach {% raw %}{{ target_ip | default(target_device) }}{% endraw %}
       {% else %}
-      Ping test failed: {{ source_device }} cannot reach {{ target_device }}
+      Ping test failed: cannot reach {% raw %}{{ target_ip | default(target_device) }}{% endraw %}
       {% endif %}
+{% raw %}
   failed_when: >
+{% endraw %}
     {% if expected_result == "success" %}
-    ping_result.failed or (ping_result.packet_loss | default(100) | int) > {{ max_packet_loss | default(0) }}
+    ping_result.failed or ping_result.rc != 0
     {% else %}
-    not ping_result.failed and (ping_result.packet_loss | default(0) | int) == 0
+    not ping_result.failed and ping_result.rc == 0
     {% endif %}
-  when: source_device is defined
-  tags:
-    - test_id:{{ test_id }}
-    - points:{{ points }}

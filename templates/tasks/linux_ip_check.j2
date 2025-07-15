@@ -1,10 +1,13 @@
+{% raw %}
 - name: "Test {{ test_id }} - Check IP configuration on {{ target_device }}"
   shell: |
+{% endraw %}
     {% if interface_name is defined %}
     ip addr show {{ interface_name }}
     {% else %}
     ip addr show
     {% endif %}
+{% raw %}
   register: ip_result
   delegate_to: "{{ target_device }}"
   tags:
@@ -14,12 +17,15 @@
 - name: "Evaluate Linux IP test {{ test_id }}"
   debug:
     msg: |
+{% endraw %}
       {% if expected_ip is defined %}
-      Checking if {{ target_device }} has IP {{ expected_ip }}
+      Checking if {% raw %}{{ target_device }}{% endraw %} has IP {{ expected_ip }}
       {% else %}
-      Checking IP configuration on {{ target_device }}
+      Checking IP configuration on {% raw %}{{ target_device }}{% endraw %}
       {% endif %}
+{% raw %}
   failed_when: >
+{% endraw %}
     {% if expected_ip is defined %}
     expected_ip not in ip_result.stdout
     {% elif interface_up is defined and interface_up %}
@@ -27,6 +33,8 @@
     {% else %}
     ip_result.rc != 0
     {% endif %}
+{% raw %}
   tags:
     - test_id:{{ test_id }}
     - points:{{ points }}
+{% endraw %}

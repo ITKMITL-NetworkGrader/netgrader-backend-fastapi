@@ -23,10 +23,9 @@ class GradingService:
     """Core service that generates Ansible playbooks and executes grading jobs"""
     
     def __init__(self):
-        self.api_client = ApiClient("http://10.110.197.111:4000/v0/grading")
+        self.api_client = ApiClient()
         self.templates_dir = Path(config.TEMPLATES_DIR)
-        self.jinja_env = Environment(loader=FileSystemLoader(self.templates_dir),variable_start_string="((" ,
-    variable_end_string="))",)
+        self.jinja_env = Environment(loader=FileSystemLoader(self.templates_dir))
         
         # Ensure directories exist
         os.makedirs(config.ANSIBLE_INVENTORY_DIR, exist_ok=True)
@@ -51,8 +50,7 @@ class GradingService:
         try:
             # Notify job started
             if job.callback_url:
-                print(f"{type(job.callback_url)} : {job.callback_url}")
-                self.api_client.callback("/started", {"job_id": job.job_id, "status": "started"})
+                self.api_client.callback(job.callback_url, "/started", {"job_id": job.job_id, "status": "started"})
             
             # Generate inventory file
             inventory_path = await self._generate_inventory(job)
@@ -78,7 +76,7 @@ class GradingService:
         result.execution_time = (end_time - start_time).total_seconds()
         # Send final result
         if job.callback_url:
-            self.api_client.callback("/result", result.model_dump())
+            self.api_client.callback(job.callback_url, "/result", result.model_dump())
         
         logger.info(f"Completed grading job {job.job_id}. Score: {result.total_points_earned}/{result.total_points_possible}")
         return result
@@ -123,28 +121,28 @@ class GradingService:
         return inventory_path
     
     async def _generate_playbook(self, job: GradingJob) -> str:
-        """Generate the master Ansible playbook with dynamic tasks"""
-        tasks_content = []
-        for test in job.topology.tests:
-            try:
-                task_content = await self._generate_task_from_template(test)
-                tasks_content.append(task_content)
-            except Exception as e:
-                logger.error(f"Failed to generate task for test {test.test_id}: {e}")
-                # Add a placeholder failure task
-                tasks_content.append(self._generate_failure_task(test, str(e)))
+        """Generate the master Ansible playbook with dynamic tasks using new template structure"""
         
-        # Combine all tasks
-        vars_block = await self._generate_test_vars(test.parameters) if test.parameters else ""
-        tasks_block = "\n".join(tasks_content)
+        # Prepare tests data for the new template structure
+        tests_data = []
+        for test in job.topology.tests:
+            # Merge test vars with expected_result if it exists
+            template_vars = test.vars.copy()
+            if test.expected_result:
+                template_vars["expected_result"] = test.expected_result
+            
+            test_data = {
+                "name": test.name,
+                "template": test.template,
+                "target_device": test.target_device,
+                "vars": template_vars,
+                "points": test.points
+            }
+            tests_data.append(test_data)
         
         # Load and render master playbook template
         master_template = self.jinja_env.get_template("master_playbook.j2")
-        playbook_content = master_template.render(
-            job_id=job.job_id,
-            tasks_block=tasks_block,
-            var_block=vars_block
-        )
+        playbook_content = master_template.render(tests=tests_data)
         
         # Write playbook file
         playbook_path = os.path.join(config.ANSIBLE_PLAYBOOK_DIR, f"playbook_{job.job_id}.yml")
@@ -154,57 +152,7 @@ class GradingService:
         logger.info(f"Generated playbook file: {playbook_path}")
         return playbook_path
     
-    async def _generate_task_from_template(self, test: TestDefinition) -> str:
-        """Generate a single Ansible task from a Jinja2 template"""
-        template_path = f"tasks/{test.template_name}"
-        
-        # Check if template exists
-        template_file = self.templates_dir / template_path
-        if not template_file.exists():
-            # Try custom templates
-            custom_template_path = f"tasks/custom/{test.template_name}"
-            template_file = self.templates_dir / custom_template_path
-            if not template_file.exists():
-                raise FileNotFoundError(f"Template not found: {test.template_name}")
-            template_path = custom_template_path
-        
-        # Load and render template
-        template = self.jinja_env.get_template(template_path)
-        task_content = template.render(
-            test_id=test.test_id,
-            test_type=test.test_type,
-            source_device=test.source_device,
-            target_device=test.target_device,
-            expected_result=test.expected_result,
-            points=test.points,
-        )
-        
-        return task_content
-    
-    async def _generate_test_vars(self, test_parameters: Dict[str, Any]) -> str:
-        """Generate variables for the test based on its parameters"""
-        test_vars = []
-        for key, value in test_parameters.items():
-            if isinstance(value, str):
-                test_vars.append(f"{key}: '{value}'")
-            elif isinstance(value, bool):
-                test_vars.append(f"{key}: {str(value).lower()}")
-            else:
-                test_vars.append(f"{key}: {value}")
-        test_vars_str = "\n".join(test_vars)
-        return test_vars_str
-    
-    def _generate_failure_task(self, test: TestDefinition, error_message: str) -> str:
-        """Generate a task that will mark the test as failed"""
-        return f"""
-    - name: "Test {test.test_id} - Template Error"
-      debug:
-        msg: "Template generation failed: {error_message}"
-      failed_when: true
-      tags:
-        - test_id:{test.test_id}
-        - points:{test.points}
-"""
+    # Old template generation methods removed - now using include_tasks in master playbook
     
     async def _execute_playbook(self, job: GradingJob, inventory_path: str, playbook_path: str, result: GradingResult) -> GradingResult:
         """Execute the Ansible playbook and parse results"""
@@ -219,7 +167,7 @@ class GradingService:
                     total_tests=len(job.topology.tests),
                     percentage=0.0
                 )
-                self.api_client.callback("/progress", progress.model_dump())
+                self.api_client.callback(job.callback_url, "/progress", progress.model_dump())
             private_data_dir = tempfile.mkdtemp(prefix=f"ansible_runner_{job.job_id}_")
         # Run ansible playbook
             runner_result = await asyncio.get_event_loop().run_in_executor(
@@ -252,7 +200,7 @@ class GradingService:
                 playbook=playbook_path,
                 inventory=inventory_path,
                 private_data_dir=private_data_dir,
-                quiet=True,
+                quiet=False,
                 # verbosity=2
             )
         return result
@@ -265,7 +213,7 @@ class GradingService:
         
         for test in job.topology.tests:
             test_result = TestResult(
-                test_id=test.test_id,
+                test_name=test.name,
                 status="error",
                 message="Test not executed",
                 points_earned=0,
@@ -277,7 +225,7 @@ class GradingService:
             for event in runner_result.events:
                 if event.get('event') == 'runner_on_ok' or event.get('event') == 'runner_on_failed':
                     task_name = event.get('event_data', {}).get('task', '')
-                    if test.test_id in task_name:
+                    if test.name in task_name:
                         test_result = self._parse_test_event(test, event)
                         break
             test_results.append(test_result)
@@ -288,16 +236,17 @@ class GradingService:
                 progress = ProgressUpdate(
                     job_id=job.job_id,
                     status="executing",
-                    message=f"Completed test: {test.test_id}",
-                    current_test=test.test_id,
+                    message=f"Completed test: {test.name}",
+                    current_test=test.name,
                     tests_completed=tests_completed,
                     total_tests=len(job.topology.tests),
                     percentage=(tests_completed / len(job.topology.tests)) * 100
                 )
-                self.api_client.callback("/progress", progress.model_dump())
+                self.api_client.callback(job.callback_url, "/progress", progress.model_dump())
         
         result.test_results = test_results
         result.total_points_earned = sum(tr.points_earned for tr in test_results)
+        print(result)
         return result
     
     def _parse_test_event(self, test: TestDefinition, event: Dict[str, Any]) -> TestResult:
@@ -318,7 +267,7 @@ class GradingService:
             message = task_result.get('msg', 'Test passed')
         
         return TestResult(
-            test_id=test.test_id,
+            test_name=test.name,
             status=status,
             message=message,
             points_earned=points_earned,

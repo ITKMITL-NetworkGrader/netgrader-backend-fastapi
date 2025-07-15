@@ -1,3 +1,4 @@
+{% raw %}
 - name: "Test {{ test_id }} - SSH connectivity from {{ source_device }} to {{ target_device }}"
   shell: |
     ssh -o ConnectTimeout={{ timeout | default(10) }} \
@@ -15,17 +16,22 @@
 - name: "Evaluate SSH connectivity test {{ test_id }}"
   debug:
     msg: |
+{% endraw %}
       {% if expected_result == "success" %}
-      SSH test passed: {{ source_device }} can SSH to {{ target_device }}
+      SSH test passed: {% raw %}{{ source_device }}{% endraw %} can SSH to {% raw %}{{ target_device }}{% endraw %}
       {% else %}
-      SSH test failed: {{ source_device }} cannot SSH to {{ target_device }}
+      SSH test failed: {% raw %}{{ source_device }}{% endraw %} cannot SSH to {% raw %}{{ target_device }}{% endraw %}
       {% endif %}
+{% raw %}
   failed_when: >
+{% endraw %}
     {% if expected_result == "success" %}
     ssh_result.rc != 0 or 'SSH connection successful' not in ssh_result.stdout
     {% else %}
     ssh_result.rc == 0 and 'SSH connection successful' in ssh_result.stdout
     {% endif %}
+{% raw %}
   tags:
     - test_id:{{ test_id }}
     - points:{{ points }}
+{% endraw %}

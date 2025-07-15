@@ -1,3 +1,4 @@
+{% raw %}
 - name: "Test {{ test_id }} - Check ACL configuration on {{ target_device }}"
   ansible.netcommon.net_get:
     command: "{{ show_acl_command | default('show access-lists') }}"
@@ -10,6 +11,7 @@
 - name: "Evaluate ACL test {{ test_id }}"
   debug:
     msg: |
+{% endraw %}
       {% if acl_name is defined %}
       Checking for ACL: {{ acl_name }}
       {% elif acl_rule is defined %}
@@ -17,7 +19,9 @@
       {% else %}
       Checking ACL configuration
       {% endif %}
+{% raw %}
   failed_when: >
+{% endraw %}
     {% if acl_name is defined %}
     acl_name not in acl_result.stdout
     {% elif acl_rule is defined %}
@@ -27,6 +31,8 @@
     {% else %}
     acl_result.failed
     {% endif %}
+{% raw %}
   tags:
     - test_id:{{ test_id }}
     - points:{{ points }}
+{% endraw %}
