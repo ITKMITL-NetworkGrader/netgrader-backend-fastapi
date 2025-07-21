@@ -27,7 +27,7 @@
     - interface_facts.ansible_facts.ansible_net_interfaces[interface_name].ipv4 is defined
     - interface_facts.ansible_facts.ansible_net_interfaces[interface_name].ipv4 | length > 0
 
-- name: "Assert: Check if the actual IP matches the expected IP"
+- name: "{{ test_id }} Assert: Check if the actual IP matches the expected IP"
   assert:
     that:
       - actual_ip == expected_ip

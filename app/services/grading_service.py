@@ -43,7 +43,7 @@ class GradingService:
             total_points_earned=0,
             total_points_possible=sum(test.points for test in job.topology.tests),
             test_results=[],
-            execution_time=0.0,
+            total_execution_time=0.0,
             created_at=start_time.isoformat()
         )
         
@@ -62,6 +62,7 @@ class GradingService:
             result = await self._execute_playbook(job, inventory_path, playbook_path, result)
             
             # Mark as completed
+            print("completed")
             result.status = "completed"
             result.completed_at = datetime.now().isoformat()
             
@@ -73,9 +74,10 @@ class GradingService:
         
         # Calculate final execution time
         end_time = datetime.now()
-        result.execution_time = (end_time - start_time).total_seconds()
+        result.total_execution_time = (end_time - start_time).total_seconds()
         # Send final result
         if job.callback_url:
+            print(result.model_dump())
             self.api_client.callback(job.callback_url, "/result", result.model_dump())
         
         logger.info(f"Completed grading job {job.job_id}. Score: {result.total_points_earned}/{result.total_points_possible}")
@@ -223,9 +225,12 @@ class GradingService:
             
             # Look for test results in ansible events
             for event in runner_result.events:
+                print(event.get('event'))
                 if event.get('event') == 'runner_on_ok' or event.get('event') == 'runner_on_failed':
+                    print("here1")
                     task_name = event.get('event_data', {}).get('task', '')
                     if test.name in task_name:
+                        print("here2")
                         test_result = self._parse_test_event(test, event)
                         break
             test_results.append(test_result)
@@ -246,7 +251,6 @@ class GradingService:
         
         result.test_results = test_results
         result.total_points_earned = sum(tr.points_earned for tr in test_results)
-        print(result)
         return result
     
     def _parse_test_event(self, test: TestDefinition, event: Dict[str, Any]) -> TestResult:

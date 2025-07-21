@@ -64,7 +64,7 @@ class GradingResult(BaseModel):
     total_points_earned: int
     total_points_possible: int
     test_results: List[TestResult]
-    execution_time: float
+    total_execution_time: float
     error_message: Optional[str] = ""
     created_at: str
     completed_at: Optional[str] = ""
