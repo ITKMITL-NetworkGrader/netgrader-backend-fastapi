@@ -11,11 +11,12 @@ import ansible_runner
 from jinja2 import Environment, FileSystemLoader, Template
 from app.schemas.models import (
     GradingJob, TestResult, GradingResult, ProgressUpdate, 
-    Device, TestDefinition, ConnectionType
+    Device, TestDefinition, ConnectionType, TestCase, TestCaseResult
 )
 from app.core.config import config
 # from app.services.api_client import APIClient
 from app.services.api_client_request import ApiClient
+from app.services.scoring_service import ScoringService
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +25,7 @@ class GradingService:
     
     def __init__(self):
         self.api_client = ApiClient()
+        self.scoring_service = ScoringService()
         self.templates_dir = Path(config.TEMPLATES_DIR)
         self.jinja_env = Environment(loader=FileSystemLoader(self.templates_dir))
         
@@ -77,7 +79,7 @@ class GradingService:
         result.total_execution_time = (end_time - start_time).total_seconds()
         # Send final result
         if job.callback_url:
-            print(result.model_dump())
+            # print(result.model_dump())
             self.api_client.callback(job.callback_url, "/result", result.model_dump())
         
         logger.info(f"Completed grading job {job.job_id}. Score: {result.total_points_earned}/{result.total_points_possible}")
@@ -158,7 +160,6 @@ class GradingService:
     
     async def _execute_playbook(self, job: GradingJob, inventory_path: str, playbook_path: str, result: GradingResult) -> GradingResult:
         """Execute the Ansible playbook and parse results"""
-        
         try:# Send initial progress update
             if job.callback_url:
                 progress = ProgressUpdate(
@@ -213,6 +214,9 @@ class GradingService:
         test_results = []
         tests_completed = 0
         
+        # Create a mapping of test names to their definitions for easier lookup
+        test_map = {test.name: test for test in job.topology.tests}
+        
         for test in job.topology.tests:
             test_result = TestResult(
                 test_name=test.name,
@@ -224,15 +228,19 @@ class GradingService:
             )
             
             # Look for test results in ansible events
+            # Check both task completion and evaluation events
             for event in runner_result.events:
-                print(event.get('event'))
-                if event.get('event') == 'runner_on_ok' or event.get('event') == 'runner_on_failed':
-                    print("here1")
+                event_type = event.get('event')
+                if event_type in ['runner_on_ok', 'runner_on_failed']:
                     task_name = event.get('event_data', {}).get('task', '')
-                    if test.name in task_name:
-                        print("here2")
+                    # Match test by name or by test_id tag
+                    if (test.name in task_name or 
+                        f"test_id:{test.name}" in str(event.get('event_data', {}).get('res', {}).get('tags', []))):
+                        
                         test_result = self._parse_test_event(test, event)
+                        logger.info(f"Parsed result for test '{test.name}': {test_result.status} ({test_result.points_earned}/{test_result.points_possible} points)")
                         break
+            
             test_results.append(test_result)
             tests_completed += 1
             
@@ -251,24 +259,102 @@ class GradingService:
         
         result.test_results = test_results
         result.total_points_earned = sum(tr.points_earned for tr in test_results)
+        
+        logger.info(f"Final grading results: {result.total_points_earned}/{result.total_points_possible} points across {len(test_results)} tests")
         return result
     
     def _parse_test_event(self, test: TestDefinition, event: Dict[str, Any]) -> TestResult:
-        """Parse individual test result from Ansible event"""
+        """Parse individual test result from Ansible event with advanced scoring"""
         event_data = event.get('event_data', {})
         task_result = event_data.get('res', {})
         
-        # Determine if test passed or failed
-        failed = event.get('event') == 'runner_on_failed' or task_result.get('failed', False)
-
-        if failed:
-            status = "failed"
-            points_earned = 0
-            message = task_result.get('msg', 'Test failed')
+        # Extract data from ansible facts/variables
+        extracted_data = self._extract_test_data(event, task_result)
+        # Use new scoring system if test cases are defined
+        if test.test_cases:
+            print("Analyze Testcase")
+            test_case_results = self.scoring_service.evaluate_test_cases(test, extracted_data)
+            points_earned, message = self.scoring_service.calculate_test_score(test_case_results, test.points)
+            status = "passed" if points_earned > 0 else "failed"
+            print(f"Testcase result : {test_case_results}\nPoints Earned : {points_earned}")
+            return TestResult(
+                test_name=test.name,
+                status=status,
+                message=message,
+                points_earned=points_earned,
+                points_possible=test.points,
+                execution_time=event_data.get('duration', 0.0),
+                test_case_results=test_case_results,
+                extracted_data=extracted_data,
+                raw_output=json.dumps(task_result, indent=2)
+            )
+        
+        # Fallback to legacy scoring for backward compatibility
         else:
-            status = "passed"
-            points_earned = test.points
-            message = task_result.get('msg', 'Test passed')
+            print("Legacy parse")
+            return self._legacy_parse_test_event(test, event_data, task_result, extracted_data)
+    
+    def _extract_test_data(self, event: Dict[str, Any], task_result: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract relevant data from Ansible task results"""
+        extracted_data = {}
+        
+        # Look for set_fact tasks that store extracted data
+        if 'ansible_facts' in task_result:
+            facts = task_result['ansible_facts']
+            
+            # Extract common data patterns
+            for key, value in facts.items():
+                if key.endswith('_data'):  # ping_data, service_data, etc.
+                    extracted_data.update(value if isinstance(value, dict) else {key: value})
+        
+        # Extract from debug output
+        if 'msg' in task_result and isinstance(task_result['msg'], dict):
+            extracted_data.update(task_result['msg'])
+        
+        # Extract from stdout/stderr
+        stdout = task_result.get('stdout', '')
+        stderr = task_result.get('stderr', '')
+        
+        if stdout:
+            extracted_data['stdout'] = stdout
+        if stderr:
+            extracted_data['stderr'] = stderr
+            
+        # Extract return code
+        if 'rc' in task_result:
+            extracted_data['return_code'] = task_result['rc']
+            
+        return extracted_data
+    
+    def _legacy_parse_test_event(self, test: TestDefinition, event_data: Dict[str, Any], 
+                                task_result: Dict[str, Any], extracted_data: Dict[str, Any]) -> TestResult:
+        """Legacy parsing for backward compatibility"""
+        
+        # Determine if test passed or failed
+        failed = task_result.get('failed', False) or task_result.get('rc', 0) != 0
+        
+        # Check against expected_result if provided
+        if test.expected_result:
+            if test.expected_result == "success":
+                passed = not failed
+            elif test.expected_result == "failure":
+                passed = failed
+            else:
+                # Try to match expected result in output
+                output_text = str(task_result.get('stdout', '')) + str(task_result.get('msg', ''))
+                passed = test.expected_result.lower() in output_text.lower()
+        else:
+            passed = not failed
+        
+        status = "passed" if passed else "failed"
+        points_earned = test.points if passed else 0
+        
+        # Generate message
+        if passed:
+            message = f"Test passed: {task_result.get('msg', 'Success')}"
+        else:
+            error_msg = task_result.get('stderr', '') or task_result.get('msg', '') or 'Unknown error'
+            message = f"Test failed: {error_msg}"
         
         return TestResult(
             test_name=test.name,
@@ -277,5 +363,6 @@ class GradingService:
             points_earned=points_earned,
             points_possible=test.points,
             execution_time=event_data.get('duration', 0.0),
+            extracted_data=extracted_data,
             raw_output=json.dumps(task_result, indent=2)
         )
