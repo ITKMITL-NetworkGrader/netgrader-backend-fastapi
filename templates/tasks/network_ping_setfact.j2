@@ -1,0 +1,33 @@
+- name: "Ping test to {{ target_ip | default(target_device) }} from network device"
+  ansible.netcommon.net_ping:
+    dest: "{{ target_ip | default(target_device) }}"
+    count: "{{ ping_count | default(3) }}"
+  register: ping_result_net
+  when: ansible_network_os is defined
+  ignore_errors: true
+
+- name: "Ping test to {{ target_ip | default(target_device) }} from Linux server"
+  ansible.builtin.shell: "ping -c {{ ping_count | default(3) }} {{ target_ip | default(target_device) }}"
+  register: ping_result_linux
+  when: ansible_network_os is not defined
+  ignore_errors: true
+
+- name: "Store test data using set_fact"
+  set_fact:
+    grading_data:
+      test_type: "ping"
+      test_id: "{{ test_id }}"
+      target: "{{ target_ip | default(target_device) }}"
+      device_type: "{{ 'network' if ansible_network_os is defined else 'linux' }}"
+      raw_result: "{{ ping_result_net if ansible_network_os is defined else ping_result_linux }}"
+      timestamp: "{{ ansible_date_time.iso8601 if ansible_date_time is defined else 'unknown' }}"
+  tags:
+    - "test_id:{{ test_id }}"
+    - grading_data
+
+- name: "Display stored data for verification"
+  debug:
+    var: grading_data
+  tags:
+    - "test_id:{{ test_id }}"
+    - verification

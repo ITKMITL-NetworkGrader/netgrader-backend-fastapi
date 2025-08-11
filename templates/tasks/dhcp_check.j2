@@ -1,0 +1,56 @@
+{% raw %}
+- name: "Test {{ test_id }} - Check DHCP service on {{ target_device }}"
+  ansible.netcommon.net_get:
+    command: "{{ dhcp_command | default('show ip dhcp binding') }}"
+  register: dhcp_result
+  delegate_to: "{{ target_device }}"
+  when: ansible_network_os is defined
+  tags:
+    - test_id:{{ test_id }}
+    - points:{{ points }}
+
+- name: "Test {{ test_id }} - Check DHCP service on Linux {{ target_device }}"
+  shell: |
+    {% if dhcp_service_check | default('systemctl') == 'systemctl' %}
+    systemctl is-active dhcpd || systemctl is-active isc-dhcp-server
+    {% else %}
+    ps aux | grep -v grep | grep dhcp
+    {% endif %}
+  register: dhcp_result
+  delegate_to: "{{ target_device }}"
+  when: ansible_network_os is not defined
+  ignore_errors: true
+  tags:
+    - test_id:{{ test_id }}
+    - points:{{ points }}
+
+- name: "Evaluate DHCP test {{ test_id }}"
+  debug:
+    msg: |
+{% endraw %}
+      {% if expected_result == "enabled" %}
+      DHCP service check passed: DHCP is running on {% raw %}{{ target_device }}{% endraw %}
+      {% elif expected_result == "disabled" %}
+      DHCP service check passed: DHCP is not running on {% raw %}{{ target_device }}{% endraw %}
+      {% elif dhcp_pool is defined %}
+      DHCP pool check: Looking for pool {% raw %}{{ dhcp_pool }}{% endraw %}
+      {% else %}
+      DHCP configuration check completed
+      {% endif %}
+{% raw %}
+  failed_when: >
+{% endraw %}
+    {% if expected_result == "enabled" %}
+    dhcp_result.failed or (dhcp_result.rc is defined and dhcp_result.rc != 0)
+    {% elif expected_result == "disabled" %}
+    not dhcp_result.failed and (dhcp_result.rc is not defined or dhcp_result.rc == 0)
+    {% elif dhcp_pool is defined %}
+    dhcp_pool not in dhcp_result.stdout
+    {% else %}
+    dhcp_result.failed
+    {% endif %}
+{% raw %}
+  tags:
+    - test_id:{{ test_id }}
+    - points:{{ points }}
+{% endraw %}

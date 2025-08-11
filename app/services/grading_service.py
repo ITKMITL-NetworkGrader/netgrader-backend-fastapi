@@ -17,6 +17,7 @@ from app.core.config import config
 # from app.services.api_client import APIClient
 from app.services.api_client_request import ApiClient
 from app.services.scoring_service import ScoringService
+from app.services.data_parser import DataParser
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +27,7 @@ class GradingService:
     def __init__(self):
         self.api_client = ApiClient()
         self.scoring_service = ScoringService()
+        self.data_parser = DataParser()
         self.templates_dir = Path(config.TEMPLATES_DIR)
         self.jinja_env = Environment(loader=FileSystemLoader(self.templates_dir))
         
@@ -64,7 +66,6 @@ class GradingService:
             result = await self._execute_playbook(job, inventory_path, playbook_path, result)
             
             # Mark as completed
-            print("completed")
             result.status = "completed"
             result.completed_at = datetime.now().isoformat()
             
@@ -270,13 +271,14 @@ class GradingService:
         
         # Extract data from ansible facts/variables
         extracted_data = self._extract_test_data(event, task_result)
+        print(f"\nExtracted Data : {extracted_data}\n")
         # Use new scoring system if test cases are defined
         if test.test_cases:
             print("Analyze Testcase")
             test_case_results = self.scoring_service.evaluate_test_cases(test, extracted_data)
             points_earned, message = self.scoring_service.calculate_test_score(test_case_results, test.points)
             status = "passed" if points_earned > 0 else "failed"
-            print(f"Testcase result : {test_case_results}\nPoints Earned : {points_earned}")
+            print(f"\nTestcase result : {json.dumps(test_case_results)}\nPoints Earned : {points_earned}\n")
             return TestResult(
                 test_name=test.name,
                 status=status,
@@ -295,23 +297,56 @@ class GradingService:
             return self._legacy_parse_test_event(test, event_data, task_result, extracted_data)
     
     def _extract_test_data(self, event: Dict[str, Any], task_result: Dict[str, Any]) -> Dict[str, Any]:
-        """Extract relevant data from Ansible task results"""
+        """Extract and parse test data from Ansible task results"""
         extracted_data = {}
         
-        # Look for set_fact tasks that store extracted data
+        # Method 1: Look for set_fact tasks with grading data (preferred)
         if 'ansible_facts' in task_result:
             facts = task_result['ansible_facts']
             
-            # Extract common data patterns
-            for key, value in facts.items():
-                if key.endswith('_data'):  # ping_data, service_data, etc.
-                    extracted_data.update(value if isinstance(value, dict) else {key: value})
+            # Check for new grading_data structure
+            if 'grading_data' in facts:
+                grading_data = facts['grading_data']
+                logger.info(f"Found grading_data for test type: {grading_data.get('test_type', 'unknown')}")
+                
+                # Use DataParser to convert raw data to structured data
+                try:
+                    parsed_data = self.data_parser.parse_raw_data(grading_data)
+                    extracted_data.update(parsed_data)
+                    logger.info(f"Successfully parsed grading_data: {list(parsed_data.keys())}")
+                except Exception as e:
+                    logger.error(f"Failed to parse grading_data: {e}")
+                    # Fallback to raw grading data
+                    extracted_data.update(grading_data)
+            
+            # Legacy support: Look for *_data patterns
+            else:
+                for key, value in facts.items():
+                    if key.endswith('_data'):  # ping_data, service_data, etc.
+                        extracted_data.update(value if isinstance(value, dict) else {key: value})
         
-        # Extract from debug output
+        # Method 2: Look for debug output with raw data (alternative approach)
         if 'msg' in task_result and isinstance(task_result['msg'], dict):
-            extracted_data.update(task_result['msg'])
+            raw_data = task_result['msg']
+            
+            # Check if this is raw data that needs parsing
+            if 'test_type' in raw_data and 'raw_result' in raw_data:
+                logger.info(f"Found debug raw data for test type: {raw_data['test_type']}")
+                
+                # Use DataParser to convert raw data to structured data
+                try:
+                    parsed_data = self.data_parser.parse_raw_data(raw_data)
+                    extracted_data.update(parsed_data)
+                    logger.info(f"Successfully parsed debug data: {list(parsed_data.keys())}")
+                except Exception as e:
+                    logger.error(f"Failed to parse debug raw data: {e}")
+                    # Fallback to raw data
+                    extracted_data.update(raw_data)
+            else:
+                # Regular debug output
+                extracted_data.update(raw_data)
         
-        # Extract from stdout/stderr
+        # Method 3: Extract basic command results (fallback)
         stdout = task_result.get('stdout', '')
         stderr = task_result.get('stderr', '')
         
@@ -324,6 +359,7 @@ class GradingService:
         if 'rc' in task_result:
             extracted_data['return_code'] = task_result['rc']
             
+        logger.debug(f"Final extracted data keys: {list(extracted_data.keys())}")
         return extracted_data
     
     def _legacy_parse_test_event(self, test: TestDefinition, event_data: Dict[str, Any], 

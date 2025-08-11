@@ -1,0 +1,196 @@
+{
+  "job_id": "comprehensive_lab_test_001",
+  "instructor_id": "prof_network_001",
+  "lab_name": "Advanced Network Configuration Lab",
+  "student_id": "student_network_001",
+  "topology": {
+    "devices": [
+      {
+        "hostname": "core_router",
+        "ip_address": "10.0.1.1",
+        "connection_type": "ansible.netcommon.network_cli",
+        "platform": "cisco.ios.ios",
+        "username": "admin",
+        "password": "cisco123"
+      },
+      {
+        "hostname": "edge_router",
+        "ip_address": "10.0.2.1",
+        "connection_type": "ansible.netcommon.network_cli",
+        "platform": "cisco.ios.ios",
+        "username": "admin",
+        "password": "cisco123"
+      },
+      {
+        "hostname": "dhcp_server",
+        "ip_address": "10.0.1.10",
+        "connection_type": "ssh",
+        "username": "ubuntu",
+        "password": "server123"
+      },
+      {
+        "hostname": "client_pc",
+        "ip_address": "10.0.1.100",
+        "connection_type": "ssh",
+        "username": "user",
+        "password": "client123"
+      }
+    ],
+    "tests": [
+      {
+        "name": "Core Router Interface Configuration",
+        "template": "network_ip_int.j2",
+        "target_device": [
+          "core_router"
+        ],
+        "vars": {
+          "interface_name": "GigabitEthernet0/0",
+          "expected_ip": "10.0.1.1"
+        },
+        "points": 10
+      },
+      {
+        "name": "Inter-Router Connectivity",
+        "template": "network_ping.j2",
+        "target_device": [
+          "core_router"
+        ],
+        "vars": {
+          "target_ip": "10.0.2.1",
+          "ping_count": 5
+        },
+        "test_cases": [
+          {
+            "description": "success_rate",
+            "expected_value": 80,
+            "comparison_type": "greater_than",
+            "points": 10,
+            "required": true
+          },
+          {
+            "description": "packets_received",
+            "expected_value": 4,
+            "comparison_type": "greater_than",
+            "points": 3,
+            "required": true
+          },
+          {
+            "description": "avg_rtt",
+            "expected_value": {
+              "min": 0,
+              "max": 50
+            },
+            "comparison_type": "range",
+            "points": 2,
+            "required": false
+          }
+        ],
+        "points": 15
+      },
+      {
+        "name": "DHCP Service Availability",
+        "template": "service_check.j2",
+        "target_device": [
+          "dhcp_server"
+        ],
+        "vars": {
+          "service_name": "isc-dhcp-server",
+          "port": 67
+        },
+        "test_cases": [
+          {
+            "description": "service_active",
+            "expected_value": true,
+            "comparison_type": "equals",
+            "points": 15,
+            "required": true
+          },
+          {
+            "description": "port_open",
+            "expected_value": true,
+            "comparison_type": "equals",
+            "points": 3,
+            "required": true
+          },
+          {
+            "description": "process_count",
+            "expected_value": 0,
+            "comparison_type": "greater_than",
+            "points": 2,
+            "required": false
+          }
+        ],
+        "points": 20
+      },
+      {
+        "name": "Client Internet Access",
+        "template": "network_ping.j2",
+        "target_device": [
+          "client_pc"
+        ],
+        "vars": {
+          "target_ip": "8.8.8.8",
+          "ping_count": 3
+        },
+        "expected_result": "success",
+        "points": 15
+      },
+      {
+        "name": "SSH Access Control",
+        "template": "linux_remote_ssh.j2",
+        "target_device": [
+          "client_pc"
+        ],
+        "vars": {
+          "source_device": "client_pc",
+          "target_device": "dhcp_server",
+          "target_ip": "10.0.1.10",
+          "target_user": "ubuntu"
+        },
+        "expected_result": "success",
+        "points": 10
+      },
+      {
+        "name": "Default Route Configuration",
+        "template": "route_check.j2",
+        "target_device": [
+          "client_pc"
+        ],
+        "vars": {
+          "next_hop": "10.0.1.1"
+        },
+        "test_cases": [
+          {
+            "description": "has_default_route",
+            "expected_value": true,
+            "comparison_type": "equals",
+            "points": 6,
+            "required": true
+          },
+          {
+            "description": "next_hop_present",
+            "expected_value": true,
+            "comparison_type": "equals",
+            "points": 4,
+            "required": true
+          }
+        ],
+        "points": 10
+      },
+      {
+        "name": "ACL Security Implementation",
+        "template": "network_acls_int.j2",
+        "target_device": [
+          "edge_router"
+        ],
+        "vars": {
+          "acl_name": "BLOCK_EXTERNAL",
+          "show_acl_command": "show access-lists BLOCK_EXTERNAL"
+        },
+        "points": 20
+      }
+    ]
+  },
+  "callback_url": "http://main-server:4000/api/v1/grading/callbacks",
+  "total_points": 100
+}

@@ -1,0 +1,95 @@
+{
+  "job_id": "yaml_templates_test_001",
+  "instructor_id": "instructor_001",
+  "lab_name": "YAML Templates Test - Clean Syntax",
+  "student_id": "student_001",
+  "topology": {
+    "devices": [
+      {
+        "hostname": "core_router",
+        "ip_address": "10.70.38.2",
+        "connection_type": "ansible.netcommon.network_cli",
+        "platform": "cisco.ios.ios",
+        "username": "admin",
+        "password": "cisco"
+      },
+      {
+        "hostname": "server1",
+        "ip_address": "192.168.0.2",
+        "connection_type": "ssh",
+        "username": "ubuntu",
+        "password": "ubuntu"
+      }
+    ],
+    "tests": [
+      {
+        "name": "Router Internet Connectivity",
+        "template": "network_ping_simple.yaml",
+        "target_device": ["core_router"],
+        "vars": {
+          "target_ip": "8.8.8.8",
+          "ping_count": 5
+        },
+        "test_cases": [
+          {
+            "description": "success_rate",
+            "expected_value": 80,
+            "comparison_type": "greater_than",
+            "points": 15,
+            "required": true
+          },
+          {
+            "description": "avg_rtt",
+            "expected_value": {
+              "min": 0,
+              "max": 100
+            },
+            "comparison_type": "range",
+            "points": 5,
+            "required": false
+          }
+        ],
+        "points": 20
+      },
+      {
+        "name": "SSH Service Check",
+        "template": "service_check_simple.yaml",
+        "target_device": ["server1"],
+        "vars": {
+          "service_name": "ssh",
+          "port": 22
+        },
+        "test_cases": [
+          {
+            "description": "service_active",
+            "expected_value": true,
+            "comparison_type": "equals",
+            "points": 8,
+            "required": true
+          }
+        ],
+        "points": 8
+      },
+      {
+        "name": "Default Route Check",
+        "template": "route_check_simple.yaml",
+        "target_device": ["server1"],
+        "vars": {
+          "route_command": "ip route show"
+        },
+        "test_cases": [
+          {
+            "description": "has_default_route",
+            "expected_value": true,
+            "comparison_type": "equals",
+            "points": 2,
+            "required": true
+          }
+        ],
+        "points": 2
+      }
+    ]
+  },
+  "callback_url": "http://10.50.37.43:4000/v0/grading",
+  "total_points": 30
+}

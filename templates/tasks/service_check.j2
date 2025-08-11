@@ -1,0 +1,56 @@
+{% raw %}
+- name: "Check service {{ service_name }} status on {{ target_device }}"
+  shell: |
+    {% if service_manager | default('systemctl') == 'systemctl' %}
+    systemctl is-active {{ service_name }} && echo "ACTIVE" || echo "INACTIVE"
+    {% elif service_manager == 'service' %}
+    service {{ service_name }} status && echo "RUNNING" || echo "STOPPED"
+    {% else %}
+    ps aux | grep -v grep | grep {{ service_name }} && echo "RUNNING" || echo "STOPPED"
+    {% endif %}
+  register: service_status_result
+  delegate_to: "{{ target_device }}"
+  ignore_errors: true
+
+- name: "Check port {{ port }} availability on {{ target_device }}"
+  shell: |
+    {% if port is defined %}
+    netstat -tuln | grep :{{ port }} && echo "OPEN" || echo "CLOSED"
+    {% else %}
+    echo "NO_PORT_SPECIFIED"
+    {% endif %}
+  register: port_status_result
+  delegate_to: "{{ target_device }}"
+  ignore_errors: true
+  when: port is defined
+
+- name: "Get detailed service information"
+  shell: |
+    {% if service_manager | default('systemctl') == 'systemctl' %}
+    systemctl status {{ service_name }} --no-pager -l
+    {% else %}
+    ps aux | grep {{ service_name }} | grep -v grep
+    {% endif %}
+  register: service_details_result
+  delegate_to: "{{ target_device }}"
+  ignore_errors: true
+
+- name: "Extract service data for scoring"
+  set_fact:
+    service_data:
+      service_name: "{{ service_name }}"
+      service_status: "{{ service_status_result.stdout.strip() | lower }}"
+      service_active: "{{ 'active' in service_status_result.stdout.lower() or 'running' in service_status_result.stdout.lower() }}"
+      port: "{{ port | default('none') }}"
+      port_status: "{{ port_status_result.stdout.strip() | lower if port is defined else 'not_checked' }}"
+      port_open: "{{ 'open' in port_status_result.stdout.lower() if port is defined else false }}"
+      service_details: "{{ service_details_result.stdout | default('') }}"
+      process_count: "{{ (service_details_result.stdout | default('') | regex_findall(service_name) | length) if service_details_result.stdout is defined else 0 }}"
+
+- name: "Store extracted service data for scoring"
+  debug:
+    var: service_data
+  tags:
+    - test_id:{{ test_id }}
+    - extracted_data
+{% endraw %}

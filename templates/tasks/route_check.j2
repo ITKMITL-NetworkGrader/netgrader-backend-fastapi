@@ -1,0 +1,67 @@
+{% raw %}
+- name: "Get routing table from network device {{ target_device }}"
+  ansible.netcommon.net_get:
+    command: "{{ route_command | default('show ip route') }}"
+  register: route_result_net
+  delegate_to: "{{ target_device }}"
+  when: ansible_network_os is defined
+  ignore_errors: true
+
+- name: "Get routing table from Linux {{ target_device }}"
+  shell: |
+    {% if route_command is defined %}
+    {{ route_command }}
+    {% else %}
+    ip route show
+    {% endif %}
+  register: route_result_linux
+  delegate_to: "{{ target_device }}"
+  when: ansible_network_os is not defined
+  ignore_errors: true
+
+- name: "{{ test_id }} : Extract routing data for analysis"
+  set_fact:
+    route_data:
+      raw_output: >-
+        {%- if ansible_network_os is defined -%}
+          {{ route_result_net.stdout | default('') }}
+        {%- else -%}
+          {{ route_result_linux.stdout | default('') }}
+        {%- endif -%}
+      has_default_route: >-
+        {%- set output = route_result_net.stdout | default('') if ansible_network_os is defined else route_result_linux.stdout | default('') -%}
+        {{ '0.0.0.0/0' in output or 'default' in output }}
+      route_count: >-
+        {%- set output = route_result_net.stdout | default('') if ansible_network_os is defined else route_result_linux.stdout | default('') -%}
+        {{ output.split('\n') | length }}
+      specific_routes: >-
+        {%- set output = route_result_net.stdout | default('') if ansible_network_os is defined else route_result_linux.stdout | default('') -%}
+        {%- set routes = [] -%}
+        {%- for line in output.split('\n') -%}
+          {%- if '/' in line and ('via' in line or 'dev' in line) -%}
+            {%- set _ = routes.append(line.strip()) -%}
+          {%- endif -%}
+        {%- endfor -%}
+        {{ routes }}
+      contains_network: >-
+        {%- if destination_network is defined -%}
+          {%- set output = route_result_net.stdout | default('') if ansible_network_os is defined else route_result_linux.stdout | default('') -%}
+          {{ destination_network in output }}
+        {%- else -%}
+          null
+        {%- endif -%}
+      next_hop_present: >-
+        {%- if next_hop is defined -%}
+          {%- set output = route_result_net.stdout | default('') if ansible_network_os is defined else route_result_linux.stdout | default('') -%}
+          {{ next_hop in output }}
+        {%- else -%}
+          null
+        {%- endif -%}
+
+- name: "Store extracted route data for scoring"
+  debug:
+    var: route_data
+  tags:
+    - test_id:{{ test_id }}
+    - extracted_data
+{% endraw %}

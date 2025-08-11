@@ -1,0 +1,77 @@
+{
+  "job_id": "simple_approach_test_001",
+  "instructor_id": "instructor_001",
+  "lab_name": "Simple Approach Test - Raw Data Collection",
+  "student_id": "student_001",
+  "topology": {
+    "devices": [
+      {
+        "hostname": "core_router",
+        "ip_address": "192.168.1.1",
+        "connection_type": "ansible.netcommon.network_cli",
+        "platform": "cisco.ios.ios",
+        "username": "admin",
+        "password": "cisco123"
+      },
+      {
+        "hostname": "server1",
+        "ip_address": "192.168.1.10",
+        "connection_type": "ssh",
+        "username": "ubuntu",
+        "password": "server123"
+      }
+    ],
+    "tests": [
+      {
+        "name": "Router Internet Connectivity",
+        "template": "network_ping_simple.j2",
+        "target_device": ["core_router"],
+        "vars": {
+          "target_ip": "8.8.8.8",
+          "ping_count": 5
+        },
+        "test_cases": [
+          {
+            "description": "success_rate",
+            "expected_value": 80,
+            "comparison_type": "greater_than",
+            "points": 15,
+            "required": true
+          },
+          {
+            "description": "avg_rtt",
+            "expected_value": {
+              "min": 0,
+              "max": 100
+            },
+            "comparison_type": "range",
+            "points": 5,
+            "required": false
+          }
+        ],
+        "points": 20
+      },
+      {
+        "name": "SSH Service Check",
+        "template": "service_check_simple.j2",
+        "target_device": ["server1"],
+        "vars": {
+          "service_name": "ssh",
+          "port": 22
+        },
+        "test_cases": [
+          {
+            "description": "service_active",
+            "expected_value": true,
+            "comparison_type": "equals",
+            "points": 10,
+            "required": true
+          }
+        ],
+        "points": 10
+      }
+    ]
+  },
+  "callback_url": "http://localhost:4000/api/grading/callbacks",
+  "total_points": 30
+}

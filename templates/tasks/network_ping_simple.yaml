@@ -1,0 +1,24 @@
+- name: "Ping test to {{ target_ip | default(target_device) }} from network device"
+  ansible.netcommon.net_ping:
+    dest: "{{ target_ip | default(target_device) }}"
+    count: "{{ ping_count | default(3) }}"
+  register: ping_result_net
+  when: ansible_network_os is defined
+  ignore_errors: true
+
+- name: "Ping test to {{ target_ip | default(target_device) }} from Linux server"
+  ansible.builtin.shell: "ping -c {{ ping_count | default(3) }} {{ target_ip | default(target_device) }}"
+  register: ping_result_linux
+  when: ansible_network_os is not defined
+  ignore_errors: true
+
+- name: "Store raw ping results for Python processing"
+  debug:
+    msg:
+      test_type: "ping"
+      target: "{{ target_ip | default(target_device) }}"
+      device_type: "{{ 'network' if ansible_network_os is defined else 'linux' }}"
+      raw_result: "{{ ping_result_net if ansible_network_os is defined else ping_result_linux }}"
+  tags:
+    - "test_id:{{ test_id }}"
+    - raw_data
