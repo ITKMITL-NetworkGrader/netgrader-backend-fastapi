@@ -1,0 +1,73 @@
+{
+  "job_id": "router_connectivity_test_001",
+  "student_id": "student_123",
+  "lab_id": "network_basics_lab",
+  "part": {
+    "part_id": "part1",
+    "title": "Router Connectivity and Configuration",
+    "plays": [
+      {
+        "play_id": "play1",
+        "source_device": "router1",
+        "target_device": "internet",
+        "ansible_tasks": [
+          {
+            "task_id": "ping_test",
+            "template_name": "network_ping",
+            "parameters": {
+              "target_ip": "{{ internet_ip }}",
+              "ping_count": 3
+            },
+            "test_cases": [
+              {
+                "comparison_type": "success",
+                "expected_result": true
+              }
+            ],
+            "points": 10
+          }
+        ]
+      },
+      {
+        "play_id": "play2",
+        "source_device": "router1",
+        "target_device": "router1",
+        "ansible_tasks": [
+          {
+            "task_id": "interface_config_check",
+            "template_name": "network_ip_int",
+            "parameters": {
+              "interface_name": "GigabitEthernet0/1",
+              "expected_ip": "{{ router1_ip }}"
+            },
+            "test_cases": [
+              {
+                "comparison_type": "equals",
+                "expected_result": "192.168.0.1"
+              }
+            ],
+            "points": 15
+          }
+        ]
+      }
+    ]
+  },
+  "devices": [
+    {
+      "id": "router1",
+      "ip_address": "10.70.38.9",
+      "ansible_connection": "network_cli",
+      "credentials": {
+        "ansible_user": "admin",
+        "ansible_password": "cisco",
+        "ansible_network_os": "cisco.ios.ios"
+      },
+      "platform": "cisco.ios.ios"
+    }
+  ],
+  "ip_mappings": {
+    "router1_ip": "192.168.0.1",
+    "internet_ip": "8.8.8.8"
+  },
+  "callback_url": "http://10.50.37.43:4000/v0/grading"
+}

@@ -1,40 +1,58 @@
-{% raw %}
-- name: "Test {{ test_id }} - Check IP configuration on {{ target_device }}"
+# Template: linux_ip_check.j2
+# Description: Check IP configuration on Linux systems
+# Parameters:
+#   - interface_name: Network interface to check (optional, checks all if not specified)
+#   - expected_ip: Expected IP address to validate (optional)
+#   - interface_up: Check if interface is up (optional, default: false)
+# Custom Fields:
+#   - interface_name: Checked interface name
+#   - expected_ip: Expected IP address
+#   - actual_ips: List of found IP addresses
+#   - interface_up: Whether interface is up
+#   - ip_found: Whether expected IP was found
+
+- name: "Check IP configuration on Linux system"
   shell: |
-{% endraw %}
     {% if interface_name is defined %}
     ip addr show {{ interface_name }}
     {% else %}
     ip addr show
     {% endif %}
-{% raw %}
   register: ip_result
-  delegate_to: "{{ target_device }}"
-  tags:
-    - test_id:{{ test_id }}
-    - points:{{ points }}
+  ignore_errors: true
 
-- name: "Evaluate Linux IP test {{ test_id }}"
-  debug:
-    msg: |
-{% endraw %}
-      {% if expected_ip is defined %}
-      Checking if {% raw %}{{ target_device }}{% endraw %} has IP {{ expected_ip }}
-      {% else %}
-      Checking IP configuration on {% raw %}{{ target_device }}{% endraw %}
-      {% endif %}
-{% raw %}
-  failed_when: >
-{% endraw %}
-    {% if expected_ip is defined %}
-    expected_ip not in ip_result.stdout
-    {% elif interface_up is defined and interface_up %}
-    'UP' not in ip_result.stdout or 'state UP' not in ip_result.stdout
-    {% else %}
-    ip_result.rc != 0
-    {% endif %}
-{% raw %}
+- name: "Store Linux IP check results using CLAUDE.md approach"
+  set_fact:
+    result_{{ task_id }}:
+      status: >-
+        {%- if expected_ip is defined -%}
+          {{ 'passed' if expected_ip in ip_result.stdout else 'failed' }}
+        {%- elif interface_up is defined and interface_up -%}
+          {{ 'passed' if ('UP' in ip_result.stdout and 'state UP' in ip_result.stdout) else 'failed' }}
+        {%- else -%}
+          {{ 'passed' if ip_result.rc == 0 else 'failed' }}
+        {%- endif -%}
+      stdout: "{{ ip_result.stdout | default('') }}"
+      stderr: "{{ ip_result.stderr | default('') }}"
+      rc: "{{ ip_result.rc | default(1) }}"
+      raw: "{{ ip_result }}"
+      custom:
+        interface_name: "{{ interface_name | default('all') }}"
+        expected_ip: "{{ expected_ip | default('not_specified') }}"
+        actual_ips: "{{ ip_result.stdout | regex_findall('inet ([0-9.]+)') if ip_result.stdout is defined else [] }}"
+        interface_up: >-
+          {%- if ip_result.stdout is defined -%}
+            {{ 'UP' in ip_result.stdout and 'state UP' in ip_result.stdout }}
+          {%- else -%}
+            false
+          {%- endif -%}
+        ip_found: >-
+          {%- if expected_ip is defined and ip_result.stdout is defined -%}
+            {{ expected_ip in ip_result.stdout }}
+          {%- else -%}
+            null
+          {%- endif -%}
+        command_successful: "{{ ip_result.rc == 0 }}"
   tags:
-    - test_id:{{ test_id }}
-    - points:{{ points }}
-{% endraw %}
+    - test_id:{{ task_id }}
+    - result_storage

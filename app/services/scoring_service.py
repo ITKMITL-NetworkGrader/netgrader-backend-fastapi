@@ -6,19 +6,19 @@ import re
 import json
 import logging
 from typing import Any, Dict, List, Union
-from app.schemas.models import TestCase, TestCaseResult, TestDefinition
+from app.schemas.models import TestCase, TestCaseResult, AnsibleTask
 
 logger = logging.getLogger(__name__)
 
 class ScoringService:
     """Service for evaluating test results against detailed test cases"""
     
-    def evaluate_test_cases(self, test_definition: TestDefinition, extracted_data: Dict[str, Any]) -> List[TestCaseResult]:
+    def evaluate_test_cases_for_task(self, task: AnsibleTask, extracted_data: Dict[str, Any]) -> List[TestCaseResult]:
         """
-        Evaluate all test cases for a test definition against extracted data
+        Evaluate all test cases for an ansible task against extracted data
         
         Args:
-            test_definition: The test definition with test cases
+            task: The ansible task with test cases
             extracted_data: Data extracted from the device/ansible output
             
         Returns:
@@ -26,50 +26,81 @@ class ScoringService:
         """
         results = []
         
-        for test_case in test_definition.test_cases:
+        for test_case in task.test_cases:
             result = self._evaluate_single_test_case(test_case, extracted_data)
             results.append(result)
             
         return results
     
     def _evaluate_single_test_case(self, test_case: TestCase, extracted_data: Dict[str, Any]) -> TestCaseResult:
-        """Evaluate a single test case against extracted data"""
+        """Evaluate a single test case against extracted data using CLAUDE.md format"""
         
-        # Extract the actual value from the data
-        actual_value = self._extract_value_from_data(extracted_data, test_case.description)
-        
+        # Extract the actual value using the flexible extraction method
+        actual_value = self._extract_value_from_data(extracted_data, test_case.comparison_type)
         # Perform comparison based on type
         passed, message = self._compare_values(
             actual_value, 
-            test_case.expected_value, 
+            test_case.expected_result, 
             test_case.comparison_type
         )
         
-        # Calculate points
-        points_earned = test_case.points if passed else 0
+        # Default to 1 point per test case
+        points_earned = 1 if passed else 0
         
         return TestCaseResult(
-            description=test_case.description,
-            expected_value=test_case.expected_value,
+            description=f"{test_case.comparison_type} check",
+            expected_value=test_case.expected_result,
             actual_value=actual_value,
             comparison_type=test_case.comparison_type,
             status="passed" if passed else "failed",
             points_earned=points_earned,
-            points_possible=test_case.points,
+            points_possible=1,
             message=message
         )
     
     def _extract_value_from_data(self, data: Dict[str, Any], key_path: str) -> Any:
         """
         Extract value from nested data structure using dot notation or direct key
+        Handles special comparison types intelligently
         
         Examples:
             - "interface_status" -> data["interface_status"]
             - "interfaces.GigabitEthernet0/0.ip" -> data["interfaces"]["GigabitEthernet0/0"]["ip"]
             - "ping_stats.success_rate" -> data["ping_stats"]["success_rate"]
+            - "success" -> data.get('success') or data.get('status') == 'passed'
         """
         try:
-            # Handle direct key access
+            # Handle special comparison types with intelligent extraction
+            if key_path == "success":
+                # Check both success field and status field from CLAUDE.md format
+                return data.get('success', False) or data.get('status') == 'passed'
+            elif key_path == "ssh_success":
+                return data.get('ssh_success', False) or data.get('success', False)
+            elif key_path == "equals":
+                # For equals, check for specific values at root level first
+                if 'actual_ip' in data:
+                    return data['actual_ip']
+                elif 'match' in data:
+                    return data['match']
+                # Check custom fields as fallback
+                custom = data.get('custom', {})
+                if 'actual_ip' in custom:
+                    return custom['actual_ip']
+                elif 'match' in custom:
+                    return custom['match']
+                # Final fallback to stdout or status
+                return data.get('stdout', '') or data.get('status', '')
+            
+            # First try to find the value at root level
+            if "." not in key_path and key_path in data:
+                return data[key_path]
+                
+            # Then try custom fields as fallback (CLAUDE.md nested format)
+            custom = data.get('custom', {})
+            if key_path in custom:
+                return custom[key_path]
+            
+            # Handle direct key access (for keys not found above)
             if "." not in key_path:
                 return data.get(key_path)
             
@@ -101,8 +132,12 @@ class ScoringService:
         """
         try:
             if comparison_type == "equals":
-                passed = int(actual) == int(expected)
-                message = f"Expected: {expected}, Got: {actual}"
+                try:
+                    passed = int(actual) == int(expected)
+                    message = f"Expected: {expected}, Got: {actual}"
+                except (ValueError, TypeError):
+                    passed = str(actual) == str(expected)
+                    message = f"Expected: {expected}, Got: {actual}"
                 
             elif comparison_type == "contains":
                 if isinstance(actual, str) and isinstance(expected, str):
@@ -168,6 +203,16 @@ class ScoringService:
                 else:
                     passed = False
                     message = f"Cannot count items in {type(actual)}"
+            
+            elif comparison_type == "success":
+                # Expected should be boolean
+                passed = bool(actual) == bool(expected)
+                message = f"Expected success: {expected}, Got: {actual}"
+                
+            elif comparison_type == "ssh_success":
+                # Expected should be boolean
+                passed = bool(actual) == bool(expected)
+                message = f"Expected SSH success: {expected}, Got: {actual}"
                     
             else:
                 passed = False

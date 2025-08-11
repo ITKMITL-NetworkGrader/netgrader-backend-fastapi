@@ -8,60 +8,43 @@ class ConnectionType(str, Enum):
     LOCAL = "local"
 
 class Device(BaseModel):
-    hostname: str
+    id: str
     ip_address: str
-    connection_type: ConnectionType
-    platform: Optional[str] = None  # e.g., "cisco_ios", "linux"
-    username: Optional[str] = None
-    password: Optional[str] = None
-    ssh_key_path: Optional[str] = None
+    ansible_connection: str
+    credentials: Dict[str, str] = Field(default_factory=dict)
+    platform: Optional[str] = None
 
 class TestCase(BaseModel):
     """Individual test case with expected vs actual comparison"""
-    description: str = Field(..., description="What this test case validates")
-    expected_value: Any = Field(..., description="Expected value for comparison")
-    comparison_type: str = Field(default="equals", description="Type of comparison: equals, contains, regex, range, exists")
-    points: int = Field(default=1, description="Points for this specific test case")
-    required: bool = Field(default=True, description="Whether this test case is required to pass")
+    comparison_type: str = Field(..., description="Type of comparison: equals, contains, regex, success, ssh_success, greater_than")
+    expected_result: Any = Field(..., description="Expected value/result for comparison")
 
-class TestDefinition(BaseModel):
-    name: str = Field(..., description="A human-readable name for the test.")
-    template: str = Field(
-        ...,
-        description="The filename of the Jinja2 task template, e.g., 'ping.yml.j2'.",
-    )
-    target_device: Optional[List[str]] = Field(
-        ...,
-        description="A list of inventory hostnames this test should run against.",
-    )
-    vars: Optional[Dict[str, Any]] = Field(
-        default_factory=dict,
-        description="Variables to be passed to the Ansible task template.",
-    )
-    test_cases: List[TestCase] = Field(
-        default_factory=list,
-        description="List of test cases with expected values for detailed scoring"
-    )
-    points: int = Field(default=1, description="Total points awarded for passing this test")
-    
-    # Backward compatibility
-    expected_result: Optional[str] = Field(
-        default=None,
-        description="Legacy expected result field (deprecated, use test_cases instead)",
-    )
+class AnsibleTask(BaseModel):
+    task_id: str
+    template_name: str
+    parameters: Dict[str, Any] = Field(default_factory=dict)
+    test_cases: List[TestCase] = Field(default_factory=list)
+    points: int = Field(default=1)
 
-class LabTopology(BaseModel):
-    devices: List[Device]
-    tests: List[TestDefinition]
+class Play(BaseModel):
+    play_id: str
+    source_device: str
+    target_device: str
+    ansible_tasks: List[AnsibleTask]
+
+class Part(BaseModel):
+    part_id: str
+    title: str
+    plays: List[Play]
 
 class GradingJob(BaseModel):
     job_id: str
-    instructor_id: str
-    lab_name: str
     student_id: str
-    topology: LabTopology
-    callback_url: Optional[str] = ""  # URL to send progress updates
-    total_points: int = Field(default=0)
+    lab_id: str
+    part: Part
+    devices: List[Device]
+    ip_mappings: Dict[str, str] = Field(default_factory=dict)
+    callback_url: str
 
 class TestCaseResult(BaseModel):
     """Result of individual test case"""

@@ -24,6 +24,7 @@ class QueueConsumer:
         self.channel: Optional[aio_pika.abc.AbstractChannel] = None
         self.queue: Optional[aio_pika.abc.AbstractQueue] = None
         self.is_running = False
+        self.cleanup_task: Optional[asyncio.Task] = None
     
     async def connect(self):
         """Establish connection to RabbitMQ"""
@@ -49,6 +50,15 @@ class QueueConsumer:
     async def disconnect(self):
         """Close RabbitMQ connection"""
         self.is_running = False
+        
+        # Cancel periodic cleanup task
+        if self.cleanup_task and not self.cleanup_task.done():
+            self.cleanup_task.cancel()
+            try:
+                await self.cleanup_task
+            except asyncio.CancelledError:
+                pass
+        
         if self.connection and not self.connection.is_closed:
             await self.connection.close()
             logger.info("Disconnected from RabbitMQ")
@@ -67,6 +77,10 @@ class QueueConsumer:
         
         # Start consuming messages
         await self.queue.consume(self._process_message)
+        
+        # Start periodic cleanup task
+        self.cleanup_task = asyncio.create_task(self._periodic_cleanup())
+        logger.info("🧹 Started periodic cleanup task")
         
         # Keep the consumer running
         try:
@@ -89,8 +103,10 @@ class QueueConsumer:
                 job = GradingJob(**job_data)
                 
                 logger.info(f"📥 Received grading job from queue: {job.job_id}")
-                logger.info(f"👨‍🎓 Student: {job.student_id} | 📚 Lab: {job.lab_name}")
-                logger.info(f"🧪 Tests to run: {len(job.topology.tests)}")
+                logger.info(f"👨‍🎓 Student: {job.student_id} | 📚 Lab: {job.lab_id}")
+                logger.info(f"🧩 Part: {job.part.title} | 🎭 Plays: {len(job.part.plays)}")
+                total_tasks = sum(len(play.ansible_tasks) for play in job.part.plays)
+                logger.info(f"🧪 Total tasks to run: {total_tasks}")
                 
                 # Process the grading job (triggers dynamic playbook generation and execution)
                 result = await self.grading_service.process_grading_job(job)
@@ -122,6 +138,28 @@ class QueueConsumer:
         )
         
         logger.info(f"Published job to queue: {job.job_id}")
+    
+    async def _periodic_cleanup(self):
+        """Background task for periodic cleanup of old files"""
+        while self.is_running:
+            try:
+                # Wait for cleanup interval (run every hour)
+                await asyncio.sleep(3600)  # 1 hour
+                
+                if not self.is_running:
+                    break
+                    
+                # Perform cleanup
+                logger.info("🧹 Running periodic cleanup of old files")
+                self.grading_service.cleanup_old_files()
+                
+            except asyncio.CancelledError:
+                logger.info("🧹 Periodic cleanup task cancelled")
+                break
+            except Exception as e:
+                logger.error(f"Error in periodic cleanup: {e}")
+                # Continue running even if cleanup fails
+                continue
 
 # Global consumer instance
 consumer = QueueConsumer()

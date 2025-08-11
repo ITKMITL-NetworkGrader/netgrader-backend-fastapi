@@ -1,38 +1,82 @@
-{% raw %}
-- name: "Test {{ test_id }} - Check ACL configuration on {{ target_device }}"
+# Template: network_acls_int.j2
+# Description: Check Access Control Lists (ACLs) configuration on network devices
+# Parameters:
+#   - show_acl_command: Command to show ACLs (default: show access-lists)
+#   - acl_name: Specific ACL name to check for (optional)
+#   - acl_rule: Specific ACL rule to verify (optional)
+#   - acl_count: Minimum number of ACL entries expected (optional)
+# Custom Fields:
+#   - acl_name: Target ACL name
+#   - acl_rule: Target ACL rule
+#   - acl_found: Whether specified ACL was found
+#   - rule_found: Whether specified rule was found
+#   - acl_entries: Total number of ACL entries found
+#   - acl_list: List of found ACL names
+
+- name: "Check ACL configuration on network device"
   ansible.netcommon.net_get:
     command: "{{ show_acl_command | default('show access-lists') }}"
   register: acl_result
-  delegate_to: "{{ target_device }}"
-  tags:
-    - test_id:{{ test_id }}
-    - points:{{ points }}
+  ignore_errors: true
 
-- name: "Evaluate ACL test {{ test_id }}"
-  debug:
-    msg: |
-{% endraw %}
-      {% if acl_name is defined %}
-      Checking for ACL: {{ acl_name }}
-      {% elif acl_rule is defined %}
-      Checking for ACL rule: {{ acl_rule }}
-      {% else %}
-      Checking ACL configuration
-      {% endif %}
-{% raw %}
-  failed_when: >
-{% endraw %}
-    {% if acl_name is defined %}
-    acl_name not in acl_result.stdout
-    {% elif acl_rule is defined %}
-    acl_rule not in acl_result.stdout
-    {% elif acl_count is defined %}
-    (acl_result.stdout | regex_findall('access-list') | length) < {{ acl_count }}
-    {% else %}
-    acl_result.failed
-    {% endif %}
-{% raw %}
+- name: "Store ACL check results using CLAUDE.md approach"
+  set_fact:
+    result_{{ task_id }}:
+      status: >-
+        {%- if acl_name is defined -%}
+          {{ 'passed' if (acl_result.stdout is defined and acl_name in acl_result.stdout) else 'failed' }}
+        {%- elif acl_rule is defined -%}
+          {{ 'passed' if (acl_result.stdout is defined and acl_rule in acl_result.stdout) else 'failed' }}
+        {%- elif acl_count is defined -%}
+          {{ 'passed' if (acl_result.stdout is defined and (acl_result.stdout | regex_findall('access-list') | length) >= acl_count) else 'failed' }}
+        {%- else -%}
+          {{ 'passed' if not acl_result.failed else 'failed' }}
+        {%- endif -%}
+      stdout: "{{ acl_result.stdout | default('') }}"
+      stderr: "{{ acl_result.stderr | default('') }}"
+      rc: >-
+        {%- if acl_result.failed -%}
+          1
+        {%- else -%}
+          0
+        {%- endif -%}
+      raw: "{{ acl_result }}"
+      custom:
+        show_acl_command: "{{ show_acl_command | default('show access-lists') }}"
+        acl_name: "{{ acl_name | default('not_specified') }}"
+        acl_rule: "{{ acl_rule | default('not_specified') }}"
+        expected_count: "{{ acl_count | default('not_specified') }}"
+        acl_found: >-
+          {%- if acl_name is defined and acl_result.stdout is defined -%}
+            {{ acl_name in acl_result.stdout }}
+          {%- else -%}
+            null
+          {%- endif -%}
+        rule_found: >-
+          {%- if acl_rule is defined and acl_result.stdout is defined -%}
+            {{ acl_rule in acl_result.stdout }}
+          {%- else -%}
+            null
+          {%- endif -%}
+        acl_entries: >-
+          {%- if acl_result.stdout is defined -%}
+            {{ acl_result.stdout | regex_findall('access-list') | length }}
+          {%- else -%}
+            0
+          {%- endif -%}
+        acl_list: >-
+          {%- if acl_result.stdout is defined -%}
+            {{ acl_result.stdout | regex_findall('access-list ([0-9]+)') }}
+          {%- else -%}
+            []
+          {%- endif -%}
+        command_successful: "{{ not acl_result.failed }}"
+        has_any_acls: >-
+          {%- if acl_result.stdout is defined -%}
+            {{ 'access-list' in acl_result.stdout }}
+          {%- else -%}
+            false
+          {%- endif -%}
   tags:
-    - test_id:{{ test_id }}
-    - points:{{ points }}
-{% endraw %}
+    - test_id:{{ task_id }}
+    - result_storage

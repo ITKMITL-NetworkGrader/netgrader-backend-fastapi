@@ -1,17 +1,28 @@
 ---
-{% for test in tests %}
-- name: "Execute Test: {{ test.name }}"
-  hosts: "{{ test.target_device | join(',') }}"
+# NetGrader Part Execution: {{ part.title }}
+{% for play in part.plays %}
+- name: "Play {{ play.play_id }}: {{ play.source_device }} to {{ play.target_device }}"
+  hosts: "{{ play.source_device }}"
   gather_facts: no
   vars:
-    test_id: "{{ test.name }}"
-    points: {{ test.points | default(10) }}
-    {% for key, value in test.vars.items() %}
-    {{ key }}: {{ value | tojson }}
+    source_device: "{{ play.source_device }}"
+    target_device: "{{ play.target_device }}"
+    {% for key, value in ip_mappings.items() %}
+    {{ key }}: "{{ value }}"
     {% endfor %}
 
   tasks:
-{% filter indent(4) %}
-{% include 'tasks/' + test.template %}
-{% endfilter %}
+    {% for task in play.ansible_tasks %}
+    - name: "Task {{ task.task_id }}: {{ task.template_name }}"
+      include_tasks: "{{ shared_tasks_dir }}/{{ task.template_name }}.j2"
+      vars:
+        task_id: "{{ task.task_id }}"
+        points: {{ task.points | default(1) }}
+        {% for key, value in task.parameters.items() %}
+        {{ key }}: {{ value | tojson }}
+        {% endfor %}
+      tags:
+        - "task_id:{{ task.task_id }}"
+        - "play_id:{{ play.play_id }}"
+    {% endfor %}
 {% endfor %}

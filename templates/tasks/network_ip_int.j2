@@ -1,4 +1,3 @@
-{% raw %}
 - name: Attempt connection and gather facts
   block:
     - name: "Attempt 1: Try connecting with modern SSH"
@@ -9,7 +8,6 @@
 
   rescue:
     - name: "Attempt 2: Set legacy args and retry on SSH failure"
-      # This block runs ONLY if the block above failed
       set_fact:
         ansible_ssh_common_args: '-o KexAlgorithms=+diffie-hellman-group-exchange-sha1 -o HostKeyAlgorithms=+ssh-rsa'
 
@@ -27,16 +25,44 @@
     - interface_facts.ansible_facts.ansible_net_interfaces[interface_name].ipv4 is defined
     - interface_facts.ansible_facts.ansible_net_interfaces[interface_name].ipv4 | length > 0
 
-- name: "{{ test_id }} Assert: Check if the actual IP matches the expected IP"
-  assert:
-    that:
-      - actual_ip == expected_ip
-    success_msg: "SUCCESS: IP on {{ interface_name }} is {{ actual_ip }}, which matches the expected IP."
-    fail_msg: "FAILURE: IP on {{ interface_name }} is {{ actual_ip }}, but we expected {{ expected_ip }}."
-  when: actual_ip is defined
-
-- name: "Report that the interface has no IP address"
-  debug:
-    msg: "INFO: Could not find an IPv4 address on interface {{ interface_name }}."
-  when: actual_ip is not defined
-{% endraw %}
+- name: "Store interface check results using CLAUDE.md set_fact approach"
+  set_fact:
+    result_{{ task_id }}:
+      status: >-
+        {%- if actual_ip is defined -%}
+          {{ 'passed' if actual_ip == expected_ip else 'failed' }}
+        {%- else -%}
+          failed
+        {%- endif -%}
+      stdout: >-
+        {%- if actual_ip is defined -%}
+          Interface {{ interface_name }} has IP {{ actual_ip }}
+        {%- else -%}
+          No IP address found on interface {{ interface_name }}
+        {%- endif -%}
+      stderr: >-
+        {%- if actual_ip is not defined -%}
+          Could not find IPv4 address on interface {{ interface_name }}
+        {%- else -%}
+          {{ '' }}
+        {%- endif -%}
+      rc: >-
+        {%- if actual_ip is defined -%}
+          {{ 0 if actual_ip == expected_ip else 1 }}
+        {%- else -%}
+          1
+        {%- endif -%}
+      raw: "{{ interface_facts }}"
+      custom:
+        interface_name: "{{ interface_name }}"
+        expected_ip: "{{ expected_ip }}"
+        actual_ip: "{{ actual_ip | default('not_found') }}"
+        match: >-
+          {%- if actual_ip is defined -%}
+            {{ actual_ip == expected_ip }}
+          {%- else -%}
+            false
+          {%- endif -%}
+  tags:
+    - test_id:{{ task_id }}
+    - result_storage

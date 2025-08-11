@@ -5,19 +5,19 @@ import os
 import asyncio
 import logging
 from datetime import datetime
-from typing import Dict, List, Optional, Any
+from typing import Dict, Any
 from pathlib import Path
 import ansible_runner
-from jinja2 import Environment, FileSystemLoader, Template
+from jinja2 import Environment, FileSystemLoader
 from app.schemas.models import (
     GradingJob, TestResult, GradingResult, ProgressUpdate, 
-    Device, TestDefinition, ConnectionType, TestCase, TestCaseResult
+    ConnectionType, AnsibleTask, Play
 )
 from app.core.config import config
 # from app.services.api_client import APIClient
 from app.services.api_client_request import ApiClient
 from app.services.scoring_service import ScoringService
-from app.services.data_parser import DataParser
+# from app.services.data_parser import DataParser  # No longer needed with CLAUDE.md approach
 
 logger = logging.getLogger(__name__)
 
@@ -27,13 +27,131 @@ class GradingService:
     def __init__(self):
         self.api_client = ApiClient()
         self.scoring_service = ScoringService()
-        self.data_parser = DataParser()
+        # self.data_parser = DataParser()  # No longer needed
         self.templates_dir = Path(config.TEMPLATES_DIR)
+        self.shared_tasks_dir = Path(config.SHARED_TASKS_DIR)
         self.jinja_env = Environment(loader=FileSystemLoader(self.templates_dir))
         
         # Ensure directories exist
         os.makedirs(config.ANSIBLE_INVENTORY_DIR, exist_ok=True)
         os.makedirs(config.ANSIBLE_PLAYBOOK_DIR, exist_ok=True)
+        os.makedirs(config.SHARED_TASKS_DIR, exist_ok=True)
+        
+        # Setup shared tasks directory (copy templates once at startup)
+        self._setup_shared_tasks_directory()
+    
+    def _setup_shared_tasks_directory(self):
+        """Copy task templates to shared directory once at service startup"""
+        import shutil
+        
+        src_tasks_dir = self.templates_dir / "tasks"
+        
+        # Check if we should preserve shared tasks across restarts
+        if config.PRESERVE_SHARED_TASKS_ON_RESTART and self.shared_tasks_dir.exists():
+            # Check if templates are up to date
+            if self._are_shared_tasks_current(src_tasks_dir):
+                logger.info(f"Preserving existing shared tasks directory at {self.shared_tasks_dir}")
+                return
+            else:
+                logger.info("Shared tasks directory exists but templates are outdated, refreshing...")
+        
+        # Clear existing shared tasks directory (if not preserving or outdated)
+        if self.shared_tasks_dir.exists():
+            shutil.rmtree(self.shared_tasks_dir)
+        self.shared_tasks_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Copy all task template files to shared location
+        if src_tasks_dir.exists():
+            templates_copied = 0
+            for task_file in src_tasks_dir.glob("*.j2"):
+                shutil.copy2(task_file, self.shared_tasks_dir / task_file.name)
+                templates_copied += 1
+                logger.debug(f"Copied task template to shared location: {task_file.name}")
+            
+            logger.info(f"Setup shared tasks directory with {templates_copied} templates at {self.shared_tasks_dir}")
+        else:
+            logger.warning(f"Source tasks directory not found: {src_tasks_dir}")
+    
+    def _are_shared_tasks_current(self, src_tasks_dir: Path) -> bool:
+        """Check if shared tasks directory contains current versions of templates"""
+        try:
+            # Check if all source templates exist in shared directory
+            for src_file in src_tasks_dir.glob("*.j2"):
+                shared_file = self.shared_tasks_dir / src_file.name
+                if not shared_file.exists():
+                    logger.debug(f"Missing shared template: {src_file.name}")
+                    return False
+                
+                # Check if source file is newer than shared file
+                if src_file.stat().st_mtime > shared_file.stat().st_mtime:
+                    logger.debug(f"Outdated shared template: {src_file.name}")
+                    return False
+            
+            # Check if shared directory has extra files (deleted from source)
+            for shared_file in self.shared_tasks_dir.glob("*.j2"):
+                src_file = src_tasks_dir / shared_file.name
+                if not src_file.exists():
+                    logger.debug(f"Orphaned shared template: {shared_file.name}")
+                    return False
+            
+            return True
+            
+        except Exception as e:
+            logger.warning(f"Failed to check shared tasks currency: {e}")
+            return False
+    
+    def _cleanup_job_files(self, job_id: str):
+        """Clean up playbook and inventory files for a specific job"""
+        try:
+            # Clean up playbook file
+            playbook_path = os.path.join(config.ANSIBLE_PLAYBOOK_DIR, f"playbook_{job_id}.yml")
+            if os.path.exists(playbook_path):
+                os.remove(playbook_path)
+                logger.debug(f"Cleaned up playbook file: playbook_{job_id}.yml")
+            
+            # Clean up inventory file
+            inventory_path = os.path.join(config.ANSIBLE_INVENTORY_DIR, f"inventory_{job_id}.yml")
+            if os.path.exists(inventory_path):
+                os.remove(inventory_path)
+                logger.debug(f"Cleaned up inventory file: inventory_{job_id}.yml")
+                
+            logger.info(f"Successfully cleaned up files for job {job_id}")
+            
+        except Exception as e:
+            logger.warning(f"Failed to cleanup files for job {job_id}: {e}")
+    
+    def cleanup_old_files(self):
+        """Clean up old playbook and inventory files older than configured hours"""
+        try:
+            from datetime import timedelta
+            import time
+            
+            cutoff_time = time.time() - (config.CLEANUP_FILES_OLDER_THAN_HOURS * 3600)
+            cleaned_count = 0
+            
+            # Clean up old playbooks
+            playbook_dir = Path(config.ANSIBLE_PLAYBOOK_DIR)
+            if playbook_dir.exists():
+                for file_path in playbook_dir.glob("playbook_*.yml"):
+                    if file_path.stat().st_mtime < cutoff_time:
+                        file_path.unlink()
+                        cleaned_count += 1
+                        logger.debug(f"Cleaned up old playbook: {file_path.name}")
+            
+            # Clean up old inventories
+            inventory_dir = Path(config.ANSIBLE_INVENTORY_DIR)
+            if inventory_dir.exists():
+                for file_path in inventory_dir.glob("inventory_*.yml"):
+                    if file_path.stat().st_mtime < cutoff_time:
+                        file_path.unlink()
+                        cleaned_count += 1
+                        logger.debug(f"Cleaned up old inventory: {file_path.name}")
+            
+            if cleaned_count > 0:
+                logger.info(f"Periodic cleanup removed {cleaned_count} old files (older than {config.CLEANUP_FILES_OLDER_THAN_HOURS}h)")
+                
+        except Exception as e:
+            logger.error(f"Failed to perform periodic cleanup: {e}")
     
     async def process_grading_job(self, job: GradingJob) -> GradingResult:
         """Main method to process a grading job"""
@@ -45,7 +163,7 @@ class GradingService:
             job_id=job.job_id,
             status="running",
             total_points_earned=0,
-            total_points_possible=sum(test.points for test in job.topology.tests),
+            total_points_possible=sum(task.points for play in job.part.plays for task in play.ansible_tasks),
             test_results=[],
             total_execution_time=0.0,
             created_at=start_time.isoformat()
@@ -83,6 +201,10 @@ class GradingService:
             # print(result.model_dump())
             self.api_client.callback(job.callback_url, "/result", result.model_dump())
         
+        # Cleanup job files after successful completion
+        if result.status == "completed" and config.CLEANUP_FILES_AFTER_JOB:
+            self._cleanup_job_files(job.job_id)
+        
         logger.info(f"Completed grading job {job.job_id}. Score: {result.total_points_earned}/{result.total_points_possible}")
         return result
     
@@ -97,25 +219,22 @@ class GradingService:
             }
         }
         
-        for device in job.topology.devices:
+        for device in job.devices:
             host_config = {
                 "ansible_host": device.ip_address,
-                "ansible_connection": device.connection_type.value
+                "ansible_connection": device.ansible_connection
             }
-            if device.username:
-                host_config["ansible_user"] = device.username
-            if device.password:
-                host_config["ansible_password"] = device.password
-            if device.ssh_key_path:
-                host_config["ansible_ssh_private_key_file"] = device.ssh_key_path
+            # Add credentials from the credentials dict
+            if device.credentials:
+                host_config.update(device.credentials)
             if device.platform:
                 host_config["ansible_network_os"] = device.platform
             
-            # Add to appropriate group
-            if device.connection_type == ConnectionType.NETWORK_CLI:
-                inventory["all"]["children"]["network_devices"]["hosts"][device.hostname] = host_config
+            # Add to appropriate group based on connection type
+            if device.ansible_connection == "ansible.netcommon.network_cli":
+                inventory["all"]["children"]["network_devices"]["hosts"][device.id] = host_config
             else:
-                inventory["all"]["children"]["linux_servers"]["hosts"][device.hostname] = host_config
+                inventory["all"]["children"]["linux_servers"]["hosts"][device.id] = host_config
         
         # Write inventory file
         inventory_path = os.path.join(config.ANSIBLE_INVENTORY_DIR, f"inventory_{job.job_id}.yml")
@@ -126,28 +245,15 @@ class GradingService:
         return inventory_path
     
     async def _generate_playbook(self, job: GradingJob) -> str:
-        """Generate the master Ansible playbook with dynamic tasks using new template structure"""
+        """Generate the master Ansible playbook using hierarchical structure"""
         
-        # Prepare tests data for the new template structure
-        tests_data = []
-        for test in job.topology.tests:
-            # Merge test vars with expected_result if it exists
-            template_vars = test.vars.copy()
-            if test.expected_result:
-                template_vars["expected_result"] = test.expected_result
-            
-            test_data = {
-                "name": test.name,
-                "template": test.template,
-                "target_device": test.target_device,
-                "vars": template_vars,
-                "points": test.points
-            }
-            tests_data.append(test_data)
-        
-        # Load and render master playbook template
+        # Load and render master playbook template with proper context
         master_template = self.jinja_env.get_template("master_playbook.j2")
-        playbook_content = master_template.render(tests=tests_data)
+        playbook_content = master_template.render(
+            part=job.part,
+            ip_mappings=job.ip_mappings,
+            shared_tasks_dir=config.SHARED_TASKS_DIR
+        )
         
         # Write playbook file
         playbook_path = os.path.join(config.ANSIBLE_PLAYBOOK_DIR, f"playbook_{job.job_id}.yml")
@@ -161,14 +267,18 @@ class GradingService:
     
     async def _execute_playbook(self, job: GradingJob, inventory_path: str, playbook_path: str, result: GradingResult) -> GradingResult:
         """Execute the Ansible playbook and parse results"""
-        try:# Send initial progress update
+        try:
+            # Calculate total tasks for progress tracking
+            total_tasks = sum(len(play.ansible_tasks) for play in job.part.plays)
+            
+            # Send initial progress update
             if job.callback_url:
                 progress = ProgressUpdate(
                     job_id=job.job_id,
                     status="executing",
-                    message="Starting playbook execution",
+                    message=f"Starting execution of part: {job.part.title}",
                     tests_completed=0,
-                    total_tests=len(job.topology.tests),
+                    total_tests=total_tasks,
                     percentage=0.0
                 )
                 self.api_client.callback(job.callback_url, "/progress", progress.model_dump())
@@ -200,6 +310,9 @@ class GradingService:
     def _run_ansible_playbook(self, playbook_path: str, inventory_path: str, private_data_dir: str) -> Any:
         """Run Ansible playbook synchronously"""
         
+        # No need to copy task templates - they are in shared directory
+        # Templates are accessible via absolute path in include_tasks
+        
         result = ansible_runner.run(
                 playbook=playbook_path,
                 inventory=inventory_path,
@@ -215,32 +328,47 @@ class GradingService:
         test_results = []
         tests_completed = 0
         
-        # Create a mapping of test names to their definitions for easier lookup
-        test_map = {test.name: test for test in job.topology.tests}
+        # Process all ansible tasks from all plays in the part
+        all_tasks = []
+        for play in job.part.plays:
+            for task in play.ansible_tasks:
+                all_tasks.append((task, play))
         
-        for test in job.topology.tests:
+        for task, play in all_tasks:
             test_result = TestResult(
-                test_name=test.name,
+                test_name=f"{play.play_id}_{task.task_id}",
                 status="error",
-                message="Test not executed",
+                message="Task not executed",
                 points_earned=0,
-                points_possible=test.points,
+                points_possible=task.points,
                 execution_time=0.0
             )
             
-            # Look for test results in ansible events
-            # Check both task completion and evaluation events
+            # Look for set_fact events containing result_<task_id> in ansible_facts
+            result_key = f"result_{task.task_id}"
+            logger.debug(f"Looking for {result_key} in ansible events")
+            
             for event in runner_result.events:
                 event_type = event.get('event')
                 if event_type in ['runner_on_ok', 'runner_on_failed']:
-                    task_name = event.get('event_data', {}).get('task', '')
-                    # Match test by name or by test_id tag
-                    if (test.name in task_name or 
-                        f"test_id:{test.name}" in str(event.get('event_data', {}).get('res', {}).get('tags', []))):
+                    event_data = event.get('event_data', {})
+                    task_result = event_data.get('res', {})
+                    task_name = event_data.get('task', 'Unknown')
+                    
+                    # Debug: Log event details for troubleshooting
+                    logger.debug(f"Event: {event_type}, Task: {task_name}, Has ansible_facts: {'ansible_facts' in task_result}")
+                    
+                    # Check if this event contains ansible_facts with our result_key
+                    if 'ansible_facts' in task_result:
+                        facts = task_result['ansible_facts']
+                        fact_keys = list(facts.keys())
+                        logger.debug(f"Available fact keys: {fact_keys}")
                         
-                        test_result = self._parse_test_event(test, event)
-                        logger.info(f"Parsed result for test '{test.name}': {test_result.status} ({test_result.points_earned}/{test_result.points_possible} points)")
-                        break
+                        if result_key in facts:
+                            # Found the set_fact event for this task
+                            test_result = self._parse_test_event(task, event, play)
+                            logger.info(f"Found set_fact result for task '{task.task_id}': {test_result.status} ({test_result.points_earned}/{test_result.points_possible} points)")
+                            break
             
             test_results.append(test_result)
             tests_completed += 1
@@ -250,11 +378,11 @@ class GradingService:
                 progress = ProgressUpdate(
                     job_id=job.job_id,
                     status="executing",
-                    message=f"Completed test: {test.name}",
-                    current_test=test.name,
+                    message=f"Completed task: {task.task_id}",
+                    current_test=f"{play.play_id}_{task.task_id}",
                     tests_completed=tests_completed,
-                    total_tests=len(job.topology.tests),
-                    percentage=(tests_completed / len(job.topology.tests)) * 100
+                    total_tests=len(all_tasks),
+                    percentage=(tests_completed / len(all_tasks)) * 100
                 )
                 self.api_client.callback(job.callback_url, "/progress", progress.model_dump())
         
@@ -264,27 +392,28 @@ class GradingService:
         logger.info(f"Final grading results: {result.total_points_earned}/{result.total_points_possible} points across {len(test_results)} tests")
         return result
     
-    def _parse_test_event(self, test: TestDefinition, event: Dict[str, Any]) -> TestResult:
+    def _parse_test_event(self, task: AnsibleTask, event: Dict[str, Any], play: Play) -> TestResult:
         """Parse individual test result from Ansible event with advanced scoring"""
         event_data = event.get('event_data', {})
         task_result = event_data.get('res', {})
         
-        # Extract data from ansible facts/variables
-        extracted_data = self._extract_test_data(event, task_result)
-        print(f"\nExtracted Data : {extracted_data}\n")
+        # Extract data from ansible facts/variables using CLAUDE.md approach
+        extracted_data = self._extract_test_data(event, task_result, task.task_id)
+        logger.debug(f"Extracted Data for {task.task_id}: {list(extracted_data.keys())}")
+        
         # Use new scoring system if test cases are defined
-        if test.test_cases:
-            print("Analyze Testcase")
-            test_case_results = self.scoring_service.evaluate_test_cases(test, extracted_data)
-            points_earned, message = self.scoring_service.calculate_test_score(test_case_results, test.points)
+        if task.test_cases:
+            logger.debug("Analyzing test cases with advanced scoring")
+            test_case_results = self.scoring_service.evaluate_test_cases_for_task(task, extracted_data)
+            points_earned, message = self.scoring_service.calculate_test_score(test_case_results, task.points)
             status = "passed" if points_earned > 0 else "failed"
-            print(f"\nTestcase result : {json.dumps(test_case_results)}\nPoints Earned : {points_earned}\n")
+            logger.debug(f"Test case results: points earned {points_earned}")
             return TestResult(
-                test_name=test.name,
+                test_name=f"{play.play_id}_{task.task_id}",
                 status=status,
                 message=message,
                 points_earned=points_earned,
-                points_possible=test.points,
+                points_possible=task.points,
                 execution_time=event_data.get('duration', 0.0),
                 test_case_results=test_case_results,
                 extracted_data=extracted_data,
@@ -293,97 +422,72 @@ class GradingService:
         
         # Fallback to legacy scoring for backward compatibility
         else:
-            print("Legacy parse")
-            return self._legacy_parse_test_event(test, event_data, task_result, extracted_data)
+            logger.debug("Using legacy parsing (no test cases defined)")
+            return self._legacy_parse_test_event(task, event_data, task_result, extracted_data, play)
     
-    def _extract_test_data(self, event: Dict[str, Any], task_result: Dict[str, Any]) -> Dict[str, Any]:
-        """Extract and parse test data from Ansible task results"""
+    def _extract_test_data(self, event: Dict[str, Any], task_result: Dict[str, Any], task_id: str) -> Dict[str, Any]:
+        """Extract test data using CLAUDE.md set_fact approach"""
         extracted_data = {}
         
-        # Method 1: Look for set_fact tasks with grading data (preferred)
+        # Look for result_<task_id> in ansible_facts (CLAUDE.md approach)
         if 'ansible_facts' in task_result:
             facts = task_result['ansible_facts']
+            result_key = f"result_{task_id}"
+            logger.debug(f"Found ansible_facts in task_result, looking for {result_key}")
             
-            # Check for new grading_data structure
-            if 'grading_data' in facts:
-                grading_data = facts['grading_data']
-                logger.info(f"Found grading_data for test type: {grading_data.get('test_type', 'unknown')}")
+            if result_key in facts:
+                result_data = facts[result_key]
+                logger.info(f"Found {result_key} in ansible_facts")
                 
-                # Use DataParser to convert raw data to structured data
-                try:
-                    parsed_data = self.data_parser.parse_raw_data(grading_data)
-                    extracted_data.update(parsed_data)
-                    logger.info(f"Successfully parsed grading_data: {list(parsed_data.keys())}")
-                except Exception as e:
-                    logger.error(f"Failed to parse grading_data: {e}")
-                    # Fallback to raw grading data
-                    extracted_data.update(grading_data)
-            
-            # Legacy support: Look for *_data patterns
-            else:
-                for key, value in facts.items():
-                    if key.endswith('_data'):  # ping_data, service_data, etc.
-                        extracted_data.update(value if isinstance(value, dict) else {key: value})
-        
-        # Method 2: Look for debug output with raw data (alternative approach)
-        if 'msg' in task_result and isinstance(task_result['msg'], dict):
-            raw_data = task_result['msg']
-            
-            # Check if this is raw data that needs parsing
-            if 'test_type' in raw_data and 'raw_result' in raw_data:
-                logger.info(f"Found debug raw data for test type: {raw_data['test_type']}")
+                # Extract standardized fields
+                extracted_data.update({
+                    'status': result_data.get('status', 'unknown'),
+                    'stdout': result_data.get('stdout', ''),
+                    'stderr': result_data.get('stderr', ''),
+                    'return_code': result_data.get('rc', 1),
+                    'raw': result_data.get('raw', {}),
+                    'success': result_data.get('status') == 'passed',
+                    'failed': result_data.get('status') == 'failed'
+                })
                 
-                # Use DataParser to convert raw data to structured data
-                try:
-                    parsed_data = self.data_parser.parse_raw_data(raw_data)
-                    extracted_data.update(parsed_data)
-                    logger.info(f"Successfully parsed debug data: {list(parsed_data.keys())}")
-                except Exception as e:
-                    logger.error(f"Failed to parse debug raw data: {e}")
-                    # Fallback to raw data
-                    extracted_data.update(raw_data)
-            else:
-                # Regular debug output
-                extracted_data.update(raw_data)
+                # Include custom fields if present
+                if 'custom' in result_data:
+                    extracted_data.update(result_data['custom'])
+                
+                logger.info(f"Successfully extracted data from {result_key}: {list(extracted_data.keys())}")
+                return extracted_data
         
-        # Method 3: Extract basic command results (fallback)
+        # Fallback: Extract basic command results from task_result
+        logger.warning(f"No result_{task_id} found, using fallback extraction")
         stdout = task_result.get('stdout', '')
         stderr = task_result.get('stderr', '')
+        rc = task_result.get('rc', 1)
+        failed = task_result.get('failed', False)
         
-        if stdout:
-            extracted_data['stdout'] = stdout
-        if stderr:
-            extracted_data['stderr'] = stderr
+        extracted_data = {
+            'status': 'failed' if failed or rc != 0 else 'passed',
+            'stdout': stdout,
+            'stderr': stderr,
+            'return_code': rc,
+            'success': not failed and rc == 0,
+            'failed': failed or rc != 0,
+            'raw': task_result
+        }
             
-        # Extract return code
-        if 'rc' in task_result:
-            extracted_data['return_code'] = task_result['rc']
-            
-        logger.debug(f"Final extracted data keys: {list(extracted_data.keys())}")
+        logger.debug(f"Fallback extracted data keys: {list(extracted_data.keys())}")
         return extracted_data
     
-    def _legacy_parse_test_event(self, test: TestDefinition, event_data: Dict[str, Any], 
-                                task_result: Dict[str, Any], extracted_data: Dict[str, Any]) -> TestResult:
+    def _legacy_parse_test_event(self, task: AnsibleTask, event_data: Dict[str, Any], 
+                                task_result: Dict[str, Any], extracted_data: Dict[str, Any], play: Play) -> TestResult:
         """Legacy parsing for backward compatibility"""
         
         # Determine if test passed or failed
         failed = task_result.get('failed', False) or task_result.get('rc', 0) != 0
         
-        # Check against expected_result if provided
-        if test.expected_result:
-            if test.expected_result == "success":
-                passed = not failed
-            elif test.expected_result == "failure":
-                passed = failed
-            else:
-                # Try to match expected result in output
-                output_text = str(task_result.get('stdout', '')) + str(task_result.get('msg', ''))
-                passed = test.expected_result.lower() in output_text.lower()
-        else:
-            passed = not failed
-        
+        # For legacy support, assume success if no test cases defined
+        passed = not failed
         status = "passed" if passed else "failed"
-        points_earned = test.points if passed else 0
+        points_earned = task.points if passed else 0
         
         # Generate message
         if passed:
@@ -393,11 +497,11 @@ class GradingService:
             message = f"Test failed: {error_msg}"
         
         return TestResult(
-            test_name=test.name,
+            test_name=f"{play.play_id}_{task.task_id}",
             status=status,
             message=message,
             points_earned=points_earned,
-            points_possible=test.points,
+            points_possible=task.points,
             execution_time=event_data.get('duration', 0.0),
             extracted_data=extracted_data,
             raw_output=json.dumps(task_result, indent=2)

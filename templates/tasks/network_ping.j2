@@ -1,4 +1,3 @@
-{% raw %}
 - name: "Ping test to {{ target_ip | default(target_device) }} from network device"
   ansible.netcommon.net_ping:
     dest: "{{ target_ip | default(target_device) }}"
@@ -13,46 +12,60 @@
   when: ansible_network_os is not defined
   ignore_errors: true
 
-- name: "{{ test_id }} : Extract ping statistics"
+- name: "Store ping results using CLAUDE.md set_fact approach"
   set_fact:
-    ping_data:
-      target: "{{ target_ip | default(target_device) }}"
-      packets_sent: "{{ ping_count | default(3) }}"
-      packets_received: >-
-        {%- if ansible_network_os is defined -%}
-          {{ ping_result_net.packet_loss | default('100%') | regex_replace('%', '') | int if ping_result_net.packet_loss is defined else (0 if ping_result_net.failed else ping_count | default(3)) }}
-        {%- else -%}
-          {{ ping_result_linux.stdout | regex_search('(\d+) received') | regex_replace(' received', '') | default('0') }}
-        {%- endif -%}
-      success_rate: >-
-        {%- if ansible_network_os is defined -%}
-          {{ 100 - (ping_result_net.packet_loss | default('100%') | regex_replace('%', '') | int) if ping_result_net.packet_loss is defined else (100 if not ping_result_net.failed else 0) }}
-        {%- else -%}
-          {{ ((ping_result_linux.stdout | regex_search('(\d+) received') | regex_replace(' received', '') | default('0') | int) / (ping_count | default(3)) * 100) | round(1) }}
-        {%- endif -%}
-      avg_rtt: >-
-        {%- if ansible_network_os is defined -%}
-          {{ ping_result_net.rtt.avg | default(0) if ping_result_net.rtt is defined else 0 }}
-        {%- else -%}
-          {{ ping_result_linux.stdout | regex_search('rtt min/avg/max/mdev = [0-9.]+/([0-9.]+)/') | regex_replace('rtt min/avg/max/mdev = [0-9.]+/', '') | regex_replace('/.*', '') | default('0') }}
-        {%- endif -%}
+    result_{{ task_id }}:
       status: >-
         {%- if ansible_network_os is defined -%}
-          {{ 'success' if not ping_result_net.failed else 'failed' }}
+          {{ 'passed' if not ping_result_net.failed else 'failed' }}
         {%- else -%}
-          {{ 'success' if ping_result_linux.rc == 0 else 'failed' }}
+          {{ 'passed' if ping_result_linux.rc == 0 else 'failed' }}
         {%- endif -%}
-      raw_output: >-
+      stdout: >-
         {%- if ansible_network_os is defined -%}
-          {{ ping_result_net | to_json }}
+          {{ ping_result_net.stdout | default('') }}
         {%- else -%}
           {{ ping_result_linux.stdout | default('') }}
         {%- endif -%}
-
-- name: "Store extracted ping data for scoring"
-  debug:
-    var: ping_data
+      stderr: >-
+        {%- if ansible_network_os is defined -%}
+          {{ ping_result_net.stderr | default('') }}
+        {%- else -%}
+          {{ ping_result_linux.stderr | default('') }}
+        {%- endif -%}
+      rc: >-
+        {%- if ansible_network_os is defined -%}
+          {{ 0 if not ping_result_net.failed else 1 }}
+        {%- else -%}
+          {{ ping_result_linux.rc | default(1) }}
+        {%- endif -%}
+      raw: >-
+        {%- if ansible_network_os is defined -%}
+          {{ ping_result_net }}
+        {%- else -%}
+          {{ ping_result_linux }}
+        {%- endif -%}
+      custom:
+        target: "{{ target_ip | default(target_device) }}"
+        packets_sent: "{{ ping_count | default(3) }}"
+        packets_received: >-
+          {%- if ansible_network_os is defined -%}
+            {{ ping_result_net.packet_loss | default('100%') | regex_replace('%', '') | int if ping_result_net.packet_loss is defined else (0 if ping_result_net.failed else ping_count | default(3)) }}
+          {%- else -%}
+            {{ ping_result_linux.stdout | regex_search('(\d+) received') | regex_replace(' received', '') | default('0') }}
+          {%- endif -%}
+        success_rate: >-
+          {%- if ansible_network_os is defined -%}
+            {{ 100 - (ping_result_net.packet_loss | default('100%') | regex_replace('%', '') | int) if ping_result_net.packet_loss is defined else (100 if not ping_result_net.failed else 0) }}
+          {%- else -%}
+            {{ ((ping_result_linux.stdout | regex_search('(\d+) received') | regex_replace(' received', '') | default('0') | int) / (ping_count | default(3)) * 100) | round(1) }}
+          {%- endif -%}
+        avg_rtt: >-
+          {%- if ansible_network_os is defined -%}
+            {{ ping_result_net.rtt.avg | default(0) if ping_result_net.rtt is defined else 0 }}
+          {%- else -%}
+            {{ ping_result_linux.stdout | regex_search('rtt min/avg/max/mdev = [0-9.]+/([0-9.]+)/') | regex_replace('rtt min/avg/max/mdev = [0-9.]+/', '') | regex_replace('/.*', '') | default('0') }}
+          {%- endif -%}
   tags:
-    - test_id:{{ test_id }}
-    - extracted_data
-{% endraw %}
+    - test_id:{{ task_id }}
+    - result_storage
