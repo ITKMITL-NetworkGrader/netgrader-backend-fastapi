@@ -163,7 +163,7 @@ class GradingService:
             job_id=job.job_id,
             status="running",
             total_points_earned=0,
-            total_points_possible=sum(task.points for play in job.part.plays for task in play.ansible_tasks),
+            total_points_possible=sum(task.points for task in job.part.play.ansible_tasks),
             test_results=[],
             total_execution_time=0.0,
             created_at=start_time.isoformat()
@@ -209,15 +209,20 @@ class GradingService:
         return result
     
     async def _generate_inventory(self, job: GradingJob) -> str:
-        """Generate Ansible inventory file for the lab topology"""
+        """Generate Ansible inventory file for the lab topology with proxy support"""
         inventory = {
             "all": {
                 "children": {
                     "network_devices": {"hosts": {}},
-                    "linux_servers": {"hosts": {}}
+                    "linux_servers": {"hosts": {}},
+                    "proxy_hosts": {"hosts": {}},
+                    "proxy_targets": {"hosts": {}}
                 }
             }
         }
+        
+        # Create device mapping for proxy host resolution
+        device_map = {device.id: device for device in job.devices}
         
         for device in job.devices:
             host_config = {
@@ -230,12 +235,60 @@ class GradingService:
             if device.platform:
                 host_config["ansible_network_os"] = device.platform
             
-            # Add to appropriate group based on connection type
-            if device.ansible_connection == "ansible.netcommon.network_cli":
-                inventory["all"]["children"]["network_devices"]["hosts"][device.id] = host_config
+            # Handle proxy configuration for two-stage SSH
+            if device.role == "proxy_target" and device.proxy_host:
+                # Proxy target devices - handled by delegation
+                if device.proxy_host in device_map:
+                    proxy_host_device = device_map[device.proxy_host]
+                    host_config["proxy_host"] = device.proxy_host
+                    host_config["proxy_host_ip"] = proxy_host_device.ip_address
+                    host_config["proxy_host_credentials"] = proxy_host_device.credentials
+                    if device.proxy_credentials:
+                        host_config["proxy_target_credentials"] = device.proxy_credentials
+                    else:
+                        host_config["proxy_target_credentials"] = device.credentials
+                    
+                    # Add SSH compatibility args for proxy connection
+                    host_config["proxy_ssh_args"] = "-o StrictHostKeyChecking=no -o HostKeyAlgorithms=+ssh-rsa"
+                    
+                inventory["all"]["children"]["proxy_targets"]["hosts"][device.id] = host_config
+                
+            elif device.role == "proxy_host":
+                # Proxy host devices - direct connection with SSH compatibility
+                if device.ssh_args:
+                    host_config["ansible_ssh_common_args"] = device.ssh_args
+                else:
+                    # Add default SSH compatibility for older devices
+                    host_config["ansible_ssh_common_args"] = "-o StrictHostKeyChecking=no -o HostKeyAlgorithms=+ssh-rsa"
+                
+                inventory["all"]["children"]["proxy_hosts"]["hosts"][device.id] = host_config
+                
             else:
-                inventory["all"]["children"]["linux_servers"]["hosts"][device.id] = host_config
-        
+                # Direct connection devices (legacy behavior)
+                # Handle jump host configuration for isolated devices (backward compatibility)
+                if device.jump_host and device.jump_host in device_map:
+                    jump_host_device = device_map[device.jump_host]
+                    self._configure_jump_host_connection(host_config, device, jump_host_device)
+                
+                # Handle persistent connections
+                if device.use_persistent_connection:
+                    host_config["ansible_persistent_connect_timeout"] = 60
+                    host_config["ansible_command_timeout"] = 30
+                
+                # Add custom SSH arguments if specified
+                if device.ssh_args:
+                    if device.ansible_connection == "ssh":
+                        host_config["ansible_ssh_common_args"] = device.ssh_args
+                    elif device.ansible_connection == "ansible.netcommon.network_cli":
+                        host_config["ansible_ssh_common_args"] = device.ssh_args
+                
+                # Add to appropriate group based on connection type
+                if device.ansible_connection == "ansible.netcommon.network_cli":
+                    inventory["all"]["children"]["network_devices"]["hosts"][device.id] = host_config
+                else:
+                    inventory["all"]["children"]["linux_servers"]["hosts"][device.id] = host_config
+                    
+        print(inventory)
         # Write inventory file
         inventory_path = os.path.join(config.ANSIBLE_INVENTORY_DIR, f"inventory_{job.job_id}.yml")
         with open(inventory_path, 'w') as f:
@@ -243,6 +296,39 @@ class GradingService:
         
         logger.info(f"Generated inventory file: {inventory_path}")
         return inventory_path
+    
+    def _configure_jump_host_connection(self, host_config: Dict[str, Any], device: Any, jump_host_device: Any):
+        """Configure jump host/proxy connection settings for isolated devices"""
+        jump_host_ip = jump_host_device.ip_address
+        
+        # Build SSH proxy command arguments
+        proxy_command_parts = []
+        
+        # Base SSH proxy command
+        if device.ansible_connection == "ssh":
+            # For SSH connections, use ProxyJump
+            host_config["ansible_ssh_common_args"] = f"-o ProxyJump={jump_host_device.credentials.get('ansible_user', 'admin')}@{jump_host_ip}"
+            
+            # Handle SSH key exchange algorithms compatibility
+            kex_args = "-o KexAlgorithms=+diffie-hellman-group1-sha1,diffie-hellman-group14-sha1"
+            cipher_args = "-o Ciphers=+aes128-cbc,aes192-cbc,aes256-cbc"
+            
+            if device.ssh_args:
+                host_config["ansible_ssh_common_args"] += f" {device.ssh_args}"
+            else:
+                host_config["ansible_ssh_common_args"] += f" {kex_args} {cipher_args}"
+                
+        elif device.ansible_connection == "ansible.netcommon.network_cli":
+            # For network devices, set up proxy through SSH tunnel
+            proxy_command = f"ssh -W %h:%p {jump_host_device.credentials.get('ansible_user', 'admin')}@{jump_host_ip}"
+            host_config["ansible_ssh_common_args"] = f"-o ProxyCommand='{proxy_command}'"
+            
+            # Add compatibility settings
+            kex_args = "-o KexAlgorithms=+diffie-hellman-group1-sha1,diffie-hellman-group14-sha1"
+            host_config["ansible_ssh_common_args"] += f" {kex_args}"
+        
+        logger.info(f"Configured jump host connection for {device.id} through {jump_host_device.id}")
+        logger.debug(f"Jump host SSH args: {host_config.get('ansible_ssh_common_args', 'none')}")
     
     async def _generate_playbook(self, job: GradingJob) -> str:
         """Generate the master Ansible playbook using hierarchical structure"""
@@ -269,7 +355,7 @@ class GradingService:
         """Execute the Ansible playbook and parse results"""
         try:
             # Calculate total tasks for progress tracking
-            total_tasks = sum(len(play.ansible_tasks) for play in job.part.plays)
+            total_tasks = len(job.part.play.ansible_tasks)
             
             # Send initial progress update
             if job.callback_url:
@@ -318,7 +404,7 @@ class GradingService:
                 inventory=inventory_path,
                 private_data_dir=private_data_dir,
                 quiet=False,
-                # verbosity=2
+                verbosity=2
             )
         return result
     
@@ -328,11 +414,9 @@ class GradingService:
         test_results = []
         tests_completed = 0
         
-        # Process all ansible tasks from all plays in the part
-        all_tasks = []
-        for play in job.part.plays:
-            for task in play.ansible_tasks:
-                all_tasks.append((task, play))
+        # Process all ansible tasks from the single play in the part
+        play = job.part.play
+        all_tasks = [(task, play) for task in play.ansible_tasks]
         
         for task, play in all_tasks:
             test_result = TestResult(

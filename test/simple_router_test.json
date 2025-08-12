@@ -5,69 +5,80 @@
   "part": {
     "part_id": "part1",
     "title": "Router Connectivity and Configuration",
-    "plays": [
-      {
-        "play_id": "play1",
-        "source_device": "router1",
-        "target_device": "internet",
-        "ansible_tasks": [
-          {
-            "task_id": "ping_test",
-            "template_name": "network_ping",
-            "parameters": {
-              "target_ip": "{{ internet_ip }}",
-              "ping_count": 3
-            },
-            "test_cases": [
-              {
-                "comparison_type": "success",
-                "expected_result": true
-              }
-            ],
-            "points": 10
-          }
-        ]
-      },
-      {
-        "play_id": "play2",
-        "source_device": "router1",
-        "target_device": "router1",
-        "ansible_tasks": [
-          {
-            "task_id": "interface_config_check",
-            "template_name": "network_ip_int",
-            "parameters": {
-              "interface_name": "GigabitEthernet0/1",
-              "expected_ip": "{{ router1_ip }}"
-            },
-            "test_cases": [
-              {
-                "comparison_type": "equals",
-                "expected_result": "192.168.0.1"
-              }
-            ],
-            "points": 15
-          }
-        ]
-      }
-    ]
+    "play": {
+      "play_id": "play1",
+      "source_device": "router1",
+      "target_device": "internet",
+      "ansible_tasks": [
+        {
+          "task_id": "task1",
+          "template_name": "network_ping",
+          "parameters": {
+            "target_ip": "{{ internet_ip }}",
+            "ping_count": 3
+          },
+          "test_cases": [
+            {
+              "comparison_type": "success",
+              "expected_result": true,
+              "points": 10
+            }
+          ],
+          "points": 10
+        },
+        {
+          "task_id": "task2",
+          "template_name": "network_ip_int",
+          "parameters": {
+            "interface_name": "GigabitEthernet0/1",
+            "expected_ip": "192.168.101.1"
+          },
+          "test_cases": [
+            {
+              "comparison_type": "success",
+              "expected_result": true,
+              "points": 15
+            }
+          ],
+          "points": 15
+        },
+        {
+          "task_id": "task3",
+          "template_name": "network_ping",
+          "parameters": {
+            "target_ip": "{{ local_network_ip }}",
+            "ping_count": 3
+          },
+          "test_cases": [
+            {
+              "comparison_type": "success",
+              "expected_result": true,
+              "points": 10
+            }
+          ],
+          "points": 10
+        }
+      ]
+    }
   },
   "devices": [
     {
       "id": "router1",
       "ip_address": "10.70.38.9",
-      "ansible_connection": "network_cli",
+      "ansible_connection": "ansible.netcommon.network_cli",
+      "role": "direct",
+      "platform": "cisco.ios.ios",
+      "use_persistent_connection": true,
       "credentials": {
         "ansible_user": "admin",
-        "ansible_password": "cisco",
-        "ansible_network_os": "cisco.ios.ios"
-      },
-      "platform": "cisco.ios.ios"
+        "ansible_password": "cisco"
+      }
     }
   ],
   "ip_mappings": {
-    "router1_ip": "192.168.0.1",
-    "internet_ip": "8.8.8.8"
+    "router1_ip": "192.168.101.1",
+    "internet_ip": "8.8.8.8",
+    "local_network_ip": "192.168.101.254"
   },
-  "callback_url": "http://10.50.37.43:4000/v0/grading"
+  "callback_url": "http://192.168.10.158:4000/v0/grading"
 }

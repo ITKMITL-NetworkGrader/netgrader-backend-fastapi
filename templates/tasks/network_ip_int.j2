@@ -1,68 +1,79 @@
-- name: Attempt connection and gather facts
+- name: "Get interface IP via proxy"
+  delegate_to: "{{ proxy_host }}"
+  shell: "sshpass -p '{{ proxy_target_credentials.ansible_password }}' ssh {{ proxy_ssh_args }} {{ proxy_target_credentials.ansible_user }}@{{ ansible_host }} 'show ip interface {{ interface_name }}'"
+  register: interface_output_proxy
+  when: proxy_host is defined and proxy_host_ip is defined
+  ignore_errors: yes
+
+- name: "Parse proxy interface IP"
+  set_fact:
+    actual_ip_proxy: "{{ interface_output_proxy.stdout.split('Internet address is ')[1].split(' ')[0] if 'Internet address is' in interface_output_proxy.stdout else 'not_found' }}"
+  when: proxy_host is defined and proxy_host_ip is defined and interface_output_proxy.stdout is defined
+
+- name: "Get interface facts directly"
+  delegate_to: "{{ execution_device }}"
   block:
-    - name: "Attempt 1: Try connecting with modern SSH"
+    - name: "Attempt modern SSH connection"
       cisco.ios.ios_facts:
         gather_subset:
           - interfaces
-      register: interface_facts
-
+      register: interface_facts_direct
   rescue:
-    - name: "Attempt 2: Set legacy args and retry on SSH failure"
+    - name: "Set legacy SSH args"
       set_fact:
         ansible_ssh_common_args: '-o KexAlgorithms=+diffie-hellman-group-exchange-sha1 -o HostKeyAlgorithms=+ssh-rsa'
-
-    - name: "Retrying connection with legacy SSH..."
+    - name: "Retry with legacy SSH"
       cisco.ios.ios_facts:
         gather_subset:
           - interfaces
-      register: interface_facts
+      register: interface_facts_direct
+  when: proxy_host is not defined or proxy_host_ip is not defined
 
-- name: "Extract the actual IP from {{ interface_name }}"
+- name: "Extract direct interface IP"
   set_fact:
-    actual_ip: "{{ interface_facts.ansible_facts.ansible_net_interfaces[interface_name].ipv4[0].address }}"
+    actual_ip_direct: "{{ interface_facts_direct.ansible_facts.ansible_net_interfaces[interface_name].ipv4[0].address }}"
   when:
-    - interface_name in interface_facts.ansible_facts.ansible_net_interfaces
-    - interface_facts.ansible_facts.ansible_net_interfaces[interface_name].ipv4 is defined
-    - interface_facts.ansible_facts.ansible_net_interfaces[interface_name].ipv4 | length > 0
+    - proxy_host is not defined or proxy_host_ip is not defined
+    - interface_facts_direct is defined
+    - interface_name in interface_facts_direct.ansible_facts.ansible_net_interfaces
+    - interface_facts_direct.ansible_facts.ansible_net_interfaces[interface_name].ipv4 is defined
+    - interface_facts_direct.ansible_facts.ansible_net_interfaces[interface_name].ipv4 | length > 0
 
-- name: "Store interface check results using CLAUDE.md set_fact approach"
+- name: "Store proxy interface results"
   set_fact:
     result_{{ task_id }}:
-      status: >-
-        {%- if actual_ip is defined -%}
-          {{ 'passed' if actual_ip == expected_ip else 'failed' }}
-        {%- else -%}
-          failed
-        {%- endif -%}
-      stdout: >-
-        {%- if actual_ip is defined -%}
-          Interface {{ interface_name }} has IP {{ actual_ip }}
-        {%- else -%}
-          No IP address found on interface {{ interface_name }}
-        {%- endif -%}
-      stderr: >-
-        {%- if actual_ip is not defined -%}
-          Could not find IPv4 address on interface {{ interface_name }}
-        {%- else -%}
-          {{ '' }}
-        {%- endif -%}
-      rc: >-
-        {%- if actual_ip is defined -%}
-          {{ 0 if actual_ip == expected_ip else 1 }}
-        {%- else -%}
-          1
-        {%- endif -%}
-      raw: "{{ interface_facts }}"
+      status: "{{ 'passed' if actual_ip_proxy is defined and actual_ip_proxy == expected_ip else 'failed' }}"
+      stdout: "{{ interface_output_proxy.stdout | default('') }}"
+      stderr: "{{ interface_output_proxy.stderr | default('') }}"
+      rc: "{{ interface_output_proxy.rc | default(1) }}"
+      raw: "{{ interface_output_proxy }}"
       custom:
         interface_name: "{{ interface_name }}"
-        expected_ip: "{{ expected_ip }}"
-        actual_ip: "{{ actual_ip | default('not_found') }}"
-        match: >-
-          {%- if actual_ip is defined -%}
-            {{ actual_ip == expected_ip }}
-          {%- else -%}
-            false
-          {%- endif -%}
+        expected_ip: "{{ expected_ip | default('not_specified') }}"
+        actual_ip: "{{ actual_ip_proxy | default('not_found') }}"
+        match: "{{ actual_ip_proxy == expected_ip if actual_ip_proxy is defined else false }}"
+        proxy_execution: true
+        proxy_host: "{{ proxy_host }}"
+  when: proxy_host is defined and proxy_host_ip is defined
+  tags:
+    - test_id:{{ task_id }}
+    - result_storage
+
+- name: "Store direct interface results"
+  set_fact:
+    result_{{ task_id }}:
+      status: "{{ 'passed' if actual_ip_direct is defined and actual_ip_direct == expected_ip else 'failed' }}"
+      stdout: "Interface {{ interface_name }} has IP {{ actual_ip_direct | default('not_found') }}"
+      stderr: "{{ 'Could not find IPv4 address on interface ' + interface_name if actual_ip_direct is not defined else '' }}"
+      rc: "{{ 0 if actual_ip_direct is defined and actual_ip_direct == expected_ip else 1 }}"
+      raw: "{{ interface_facts_direct | default({}) }}"
+      custom:
+        interface_name: "{{ interface_name }}"
+        expected_ip: "{{ expected_ip | default('not_specified') }}"
+        actual_ip: "{{ actual_ip_direct | default('not_found') }}"
+        match: "{{ actual_ip_direct == expected_ip if actual_ip_direct is defined else false }}"
+        proxy_execution: false
+  when: proxy_host is not defined or proxy_host_ip is not defined
   tags:
     - test_id:{{ task_id }}
     - result_storage

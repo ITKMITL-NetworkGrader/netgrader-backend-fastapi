@@ -1,28 +1,32 @@
 ---
 # NetGrader Part Execution: {{ part.title }}
-{% for play in part.plays %}
-- name: "Play {{ play.play_id }}: {{ play.source_device }} to {{ play.target_device }}"
-  hosts: "{{ play.source_device }}"
+# Simplified structure: Single play per part with delegate_to for device targeting
+- name: "Part {{ part.part_id }}: {{ part.title }}"
+  hosts: localhost
   gather_facts: no
+  connection: local
   vars:
-    source_device: "{{ play.source_device }}"
-    target_device: "{{ play.target_device }}"
+    # Global IP mappings available to all tasks
     {% for key, value in ip_mappings.items() %}
     {{ key }}: "{{ value }}"
     {% endfor %}
-
+    
   tasks:
-    {% for task in play.ansible_tasks %}
-    - name: "Task {{ task.task_id }}: {{ task.template_name }}"
+    {% for task in part.play.ansible_tasks %}
+    - name: "Task {{ task.task_id }}: {{ task.template_name }} ({{ part.play.source_device }} -> {{ part.play.target_device }})"
       include_tasks: "{{ shared_tasks_dir }}/{{ task.template_name }}.j2"
       vars:
         task_id: "{{ task.task_id }}"
         points: {{ task.points | default(1) }}
+        source_device: "{{ part.play.source_device }}"
+        target_device: "{{ part.play.target_device }}"
+        execution_device: "{{ part.play.source_device }}"
         {% for key, value in task.parameters.items() %}
         {{ key }}: {{ value | tojson }}
         {% endfor %}
+
       tags:
         - "task_id:{{ task.task_id }}"
-        - "play_id:{{ play.play_id }}"
+        - "play_id:{{ part.play.play_id }}"
+        - "part_id:{{ part.part_id }}"
     {% endfor %}
-{% endfor %}

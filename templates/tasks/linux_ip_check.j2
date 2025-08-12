@@ -1,5 +1,5 @@
 # Template: linux_ip_check.j2
-# Description: Check IP configuration on Linux systems
+# Description: Check IP configuration on Linux systems (with proxy support)
 # Parameters:
 #   - interface_name: Network interface to check (optional, checks all if not specified)
 #   - expected_ip: Expected IP address to validate (optional)
@@ -11,48 +11,59 @@
 #   - interface_up: Whether interface is up
 #   - ip_found: Whether expected IP was found
 
-- name: "Check IP configuration on Linux system"
-  shell: |
-    {% if interface_name is defined %}
-    ip addr show {{ interface_name }}
-    {% else %}
-    ip addr show
-    {% endif %}
-  register: ip_result
-  ignore_errors: true
+- name: "Check IP configuration via proxy"
+  delegate_to: "{{ proxy_host }}"
+  shell: "sshpass -p '{{ proxy_target_credentials.ansible_password }}' ssh {{ proxy_ssh_args }} {{ proxy_target_credentials.ansible_user }}@{{ ansible_host }} 'ip addr show{{ ' ' + interface_name if interface_name is defined else '' }}'"
+  register: ip_result_proxy
+  when: proxy_host is defined and proxy_host_ip is defined
+  ignore_errors: yes
 
-- name: "Store Linux IP check results using CLAUDE.md approach"
+- name: "Check IP configuration directly"
+  delegate_to: "{{ execution_device }}"
+  shell: "ip addr show{{ ' ' + interface_name if interface_name is defined else '' }}"
+  register: ip_result_direct
+  when: proxy_host is not defined or proxy_host_ip is not defined
+  ignore_errors: yes
+
+- name: "Store proxy IP check results"
   set_fact:
     result_{{ task_id }}:
-      status: >-
-        {%- if expected_ip is defined -%}
-          {{ 'passed' if expected_ip in ip_result.stdout else 'failed' }}
-        {%- elif interface_up is defined and interface_up -%}
-          {{ 'passed' if ('UP' in ip_result.stdout and 'state UP' in ip_result.stdout) else 'failed' }}
-        {%- else -%}
-          {{ 'passed' if ip_result.rc == 0 else 'failed' }}
-        {%- endif -%}
-      stdout: "{{ ip_result.stdout | default('') }}"
-      stderr: "{{ ip_result.stderr | default('') }}"
-      rc: "{{ ip_result.rc | default(1) }}"
-      raw: "{{ ip_result }}"
+      status: "{{ 'passed' if (expected_ip is defined and expected_ip in ip_result_proxy.stdout) or (interface_up is defined and interface_up and 'UP' in ip_result_proxy.stdout and 'state UP' in ip_result_proxy.stdout) or (expected_ip is not defined and interface_up is not defined and ip_result_proxy.rc == 0) else 'failed' }}"
+      stdout: "{{ ip_result_proxy.stdout | default('') }}"
+      stderr: "{{ ip_result_proxy.stderr | default('') }}"
+      rc: "{{ ip_result_proxy.rc | default(1) }}"
+      raw: "{{ ip_result_proxy }}"
       custom:
         interface_name: "{{ interface_name | default('all') }}"
         expected_ip: "{{ expected_ip | default('not_specified') }}"
-        actual_ips: "{{ ip_result.stdout | regex_findall('inet ([0-9.]+)') if ip_result.stdout is defined else [] }}"
-        interface_up: >-
-          {%- if ip_result.stdout is defined -%}
-            {{ 'UP' in ip_result.stdout and 'state UP' in ip_result.stdout }}
-          {%- else -%}
-            false
-          {%- endif -%}
-        ip_found: >-
-          {%- if expected_ip is defined and ip_result.stdout is defined -%}
-            {{ expected_ip in ip_result.stdout }}
-          {%- else -%}
-            null
-          {%- endif -%}
-        command_successful: "{{ ip_result.rc == 0 }}"
+        actual_ips: "{{ ip_result_proxy.stdout.split() | select('match', '^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+') | list if ip_result_proxy.stdout is defined else [] }}"
+        interface_up: "{{ 'UP' in ip_result_proxy.stdout and 'state UP' in ip_result_proxy.stdout if ip_result_proxy.stdout is defined else false }}"
+        ip_found: "{{ expected_ip in ip_result_proxy.stdout if expected_ip is defined and ip_result_proxy.stdout is defined else null }}"
+        command_successful: "{{ ip_result_proxy.rc == 0 }}"
+        proxy_execution: true
+        proxy_host: "{{ proxy_host }}"
+  when: proxy_host is defined and proxy_host_ip is defined
+  tags:
+    - test_id:{{ task_id }}
+    - result_storage
+
+- name: "Store direct IP check results"
+  set_fact:
+    result_{{ task_id }}:
+      status: "{{ 'passed' if (expected_ip is defined and expected_ip in ip_result_direct.stdout) or (interface_up is defined and interface_up and 'UP' in ip_result_direct.stdout and 'state UP' in ip_result_direct.stdout) or (expected_ip is not defined and interface_up is not defined and ip_result_direct.rc == 0) else 'failed' }}"
+      stdout: "{{ ip_result_direct.stdout | default('') }}"
+      stderr: "{{ ip_result_direct.stderr | default('') }}"
+      rc: "{{ ip_result_direct.rc | default(1) }}"
+      raw: "{{ ip_result_direct }}"
+      custom:
+        interface_name: "{{ interface_name | default('all') }}"
+        expected_ip: "{{ expected_ip | default('not_specified') }}"
+        actual_ips: "{{ ip_result_direct.stdout.split() | select('match', '^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+') | list if ip_result_direct.stdout is defined else [] }}"
+        interface_up: "{{ 'UP' in ip_result_direct.stdout and 'state UP' in ip_result_direct.stdout if ip_result_direct.stdout is defined else false }}"
+        ip_found: "{{ expected_ip in ip_result_direct.stdout if expected_ip is defined and ip_result_direct.stdout is defined else null }}"
+        command_successful: "{{ ip_result_direct.rc == 0 }}"
+        proxy_execution: false
+  when: proxy_host is not defined or proxy_host_ip is not defined
   tags:
     - test_id:{{ task_id }}
     - result_storage

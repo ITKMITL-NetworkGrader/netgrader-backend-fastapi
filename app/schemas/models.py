@@ -13,6 +13,12 @@ class Device(BaseModel):
     ansible_connection: str
     credentials: Dict[str, str] = Field(default_factory=dict)
     platform: Optional[str] = None
+    jump_host: Optional[str] = Field(None, description="Jump host device ID for proxy connections")
+    ssh_args: Optional[str] = Field(None, description="Custom SSH arguments for connection")
+    use_persistent_connection: Optional[bool] = Field(False, description="Use persistent connection through jump host")
+    role: Optional[str] = Field("direct", description="Device role: 'proxy_host', 'proxy_target', 'direct'")
+    proxy_host: Optional[str] = Field(None, description="Proxy host device ID for two-stage SSH")
+    proxy_credentials: Optional[Dict[str, str]] = Field(None, description="Credentials for proxy target device")
 
 class TestCase(BaseModel):
     """Individual test case with expected vs actual comparison"""
@@ -21,6 +27,7 @@ class TestCase(BaseModel):
 
 class AnsibleTask(BaseModel):
     task_id: str
+    name: Optional[str] = None
     template_name: str
     parameters: Dict[str, Any] = Field(default_factory=dict)
     test_cases: List[TestCase] = Field(default_factory=list)
@@ -35,7 +42,7 @@ class Play(BaseModel):
 class Part(BaseModel):
     part_id: str
     title: str
-    plays: List[Play]
+    play: Play
 
 class GradingJob(BaseModel):
     job_id: str
