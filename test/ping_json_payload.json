@@ -1,0 +1,100 @@
+{
+  "job_id": "job_two_stage_pc_switch_001",
+  "student_id": "student123",
+  "lab_id": "lab_two_stage_pc_switch",
+  "part": {
+    "part_id": "part1",
+    "title": "PC and Switch Connectivity Test",
+    "play": {
+      "play_id": "play1",
+      "source_device": "pc1",
+      "target_device": "pc2",
+      "ansible_tasks": [
+        {
+          "task_id": "task0",
+          "template_name": "linux_ip_check",
+          "parameters": {
+            "expected_ip": "192.168.101.2"
+          },
+          "test_cases": [
+            {
+              "comparison_type": "success",
+              "expected_result": true,
+              "points": 5
+            }
+          ],
+          "points": 5
+        },
+        {
+          "task_id": "task1",
+          "template_name": "network_ping",
+          "parameters": {
+            "target_ip": "{{ pc2_ip }}",
+            "ping_count": 3
+          },
+          "test_cases": [
+            {
+              "comparison_type": "success",
+              "expected_result": true,
+              "points": 10
+            }
+          ],
+          "points": 10
+        },
+        {
+          "task_id": "task2",
+          "template_name": "network_ping",
+          "parameters": {
+            "target_ip": "{{ switch_ip }}",
+            "ping_count": 3
+          },
+          "test_cases": [
+            {
+              "comparison_type": "success",
+              "expected_result": true,
+              "points": 10
+            }
+          ],
+          "points": 10
+        }
+      ]
+    }
+  },
+  "devices": [
+    {
+      "id": "router",
+      "ip_address": "10.70.38.2",
+      "ansible_connection": "ssh",
+      "platform": "cisco.ios.ios",
+      "credentials": {
+        "ansible_user": "admin",
+        "ansible_password": "cisco"
+      }
+    },
+    {
+      "id": "pc1",
+      "ip_address": "192.168.101.2",
+      "ansible_connection": "ssh",
+      "credentials": {
+        "ansible_user": "ubuntu",
+        "ansible_password": "ubuntu"
+      }
+    },
+    {
+      "id": "pc2",
+      "ip_address": "192.168.102.2",
+      "ansible_connection": "ssh",
+      "credentials": {
+        "ansible_user": "ubuntu",
+        "ansible_password": "ubuntu"
+      }
+    }
+  ],
+  "ip_mappings": {
+    "pc1_ip": "192.168.101.2",
+    "pc2_ip": "192.168.102.2",
+    "switch_ip": "192.168.101.254",
+    "router_mgmt_ip": "10.70.38.2"
+  },
+  "callback_url": "http://10.50.37.43:4000/v0/grading"
+}

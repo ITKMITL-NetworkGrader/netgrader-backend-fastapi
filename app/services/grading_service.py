@@ -1,4 +1,5 @@
 import json
+import math
 import yaml
 import tempfile
 import os
@@ -223,6 +224,7 @@ class GradingService:
         
         # Create device mapping for proxy host resolution
         device_map = {device.id: device for device in job.devices}
+        logger.debug(f"Device map created with {len(device_map)} devices")
         
         for device in job.devices:
             host_config = {
@@ -235,31 +237,50 @@ class GradingService:
             if device.platform:
                 host_config["ansible_network_os"] = device.platform
             
-            # Handle proxy configuration for two-stage SSH
+            # Handle proxy configuration for two-stage SSH using Ansible native ProxyJump
             if device.role == "proxy_target" and device.proxy_host:
-                # Proxy target devices - handled by delegation
+                # Proxy target devices - use Ansible native ProxyJump
                 if device.proxy_host in device_map:
                     proxy_host_device = device_map[device.proxy_host]
-                    host_config["proxy_host"] = device.proxy_host
-                    host_config["proxy_host_ip"] = proxy_host_device.ip_address
-                    host_config["proxy_host_credentials"] = proxy_host_device.credentials
-                    if device.proxy_credentials:
-                        host_config["proxy_target_credentials"] = device.proxy_credentials
-                    else:
-                        host_config["proxy_target_credentials"] = device.credentials
+                    proxy_user = proxy_host_device.credentials.get('ansible_user', 'admin')
+                    proxy_host_ip = proxy_host_device.ip_address
                     
-                    # Add SSH compatibility args for proxy connection
-                    host_config["proxy_ssh_args"] = "-o StrictHostKeyChecking=no -o HostKeyAlgorithms=+ssh-rsa"
+                    # Build comprehensive SSH args with ProxyJump and compatibility options
+                    ssh_args = [
+                        f"-o ProxyJump={proxy_user}@{proxy_host_ip}",
+                        "-o StrictHostKeyChecking=no",
+                        "-o UserKnownHostsFile=/dev/null",
+                        "-o KexAlgorithms=+diffie-hellman-group-exchange-sha1,diffie-hellman-group14-sha1,diffie-hellman-group1-sha1",
+                        "-o HostKeyAlgorithms=+ssh-rsa,ssh-dss",
+                        "-o Ciphers=+aes128-cbc,aes192-cbc,aes256-cbc,3des-cbc",
+                        "-o ServerAliveInterval=60",
+                        "-o ConnectTimeout=30"
+                    ]
+                    
+                    host_config["ansible_ssh_common_args"] = " ".join(ssh_args)
+                    
+                    # Store proxy information for reference (but connection handled by ProxyJump)
+                    host_config["proxy_host"] = device.proxy_host
+                    host_config["proxy_host_ip"] = proxy_host_ip
                     
                 inventory["all"]["children"]["proxy_targets"]["hosts"][device.id] = host_config
                 
             elif device.role == "proxy_host":
-                # Proxy host devices - direct connection with SSH compatibility
+                # Proxy host devices - direct connection with comprehensive SSH compatibility
                 if device.ssh_args:
                     host_config["ansible_ssh_common_args"] = device.ssh_args
                 else:
-                    # Add default SSH compatibility for older devices
-                    host_config["ansible_ssh_common_args"] = "-o StrictHostKeyChecking=no -o HostKeyAlgorithms=+ssh-rsa"
+                    # Add comprehensive SSH compatibility for older devices
+                    ssh_args = [
+                        "-o StrictHostKeyChecking=no",
+                        "-o UserKnownHostsFile=/dev/null",
+                        "-o KexAlgorithms=+diffie-hellman-group-exchange-sha1,diffie-hellman-group14-sha1,diffie-hellman-group1-sha1",
+                        "-o HostKeyAlgorithms=+ssh-rsa,ssh-dss",
+                        "-o Ciphers=+aes128-cbc,aes192-cbc,aes256-cbc,3des-cbc",
+                        "-o ServerAliveInterval=60",
+                        "-o ConnectTimeout=30"
+                    ]
+                    host_config["ansible_ssh_common_args"] = " ".join(ssh_args)
                 
                 inventory["all"]["children"]["proxy_hosts"]["hosts"][device.id] = host_config
                 
@@ -288,7 +309,6 @@ class GradingService:
                 else:
                     inventory["all"]["children"]["linux_servers"]["hosts"][device.id] = host_config
                     
-        print(inventory)
         # Write inventory file
         inventory_path = os.path.join(config.ANSIBLE_INVENTORY_DIR, f"inventory_{job.job_id}.yml")
         with open(inventory_path, 'w') as f:
@@ -466,8 +486,8 @@ class GradingService:
                     current_test=f"{play.play_id}_{task.task_id}",
                     tests_completed=tests_completed,
                     total_tests=len(all_tasks),
-                    percentage=(tests_completed / len(all_tasks)) * 100
-                )
+                    percentage=float(f"{((tests_completed / len(all_tasks)) * 100):.2f}")
+                )   
                 self.api_client.callback(job.callback_url, "/progress", progress.model_dump())
         
         result.test_results = test_results

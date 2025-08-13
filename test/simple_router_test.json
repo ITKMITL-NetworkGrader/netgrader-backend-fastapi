@@ -30,7 +30,7 @@
           "task_id": "task2",
           "template_name": "network_ip_int",
           "parameters": {
-            "interface_name": "GigabitEthernet0/1",
+            "interface_name": "GigabitEthernet0/1.101",
             "expected_ip": "192.168.101.1"
           },
           "test_cases": [
@@ -80,5 +80,5 @@
     "internet_ip": "8.8.8.8",
     "local_network_ip": "192.168.101.254"
   },
-  "callback_url": "http://192.168.10.158:4000/v0/grading"
+  "callback_url": "http://10.50.37.43:4000/v0/grading"
 }

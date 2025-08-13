@@ -1,10 +1,9 @@
-- name: "Ping test to {{ target_ip | default(target_device) }} via proxy"
-  delegate_to: "{{ proxy_host }}"
-  shell: |
-    sshpass -p "{{ proxy_target_credentials.ansible_password }}" ssh {{ proxy_ssh_args }} {{ proxy_target_credentials.ansible_user }}@{{ ansible_host }} 'ping -c {{ ping_count | default(3) }} {{ target_ip | default(target_device) }}'
-  register: ping_result_proxy
-  when: proxy_host is defined and proxy_host_ip is defined
-  ignore_errors: yes
+# Template: network_ping.j2
+# Description: Ping test for both network devices and Linux servers (with native Ansible proxy support)
+# Parameters:
+#   - target_ip: IP address to ping (required)
+#   - target_device: Alternative target device name
+#   - ping_count: Number of ping packets (default: 3)
 
 - name: "Ping test to {{ target_ip | default(target_device) }} from network device"
   delegate_to: "{{ execution_device }}"
@@ -12,53 +11,34 @@
     dest: "{{ target_ip | default(target_device) }}"
     count: "{{ ping_count | default(3) }}"
   register: ping_result_net
-  when: proxy_host is not defined and hostvars[execution_device]['ansible_network_os'] is defined
+  when: hostvars[execution_device]['ansible_network_os'] is defined
   ignore_errors: true
 
 - name: "Ping test to {{ target_ip | default(target_device) }} from Linux server"
   delegate_to: "{{ execution_device }}"
   ansible.builtin.shell: "ping -c {{ ping_count | default(3) }} {{ target_ip | default(target_device) }}"
   register: ping_result_linux
-  when: proxy_host is not defined and (hostvars[execution_device]['ansible_network_os'] is not defined or hostvars[execution_device]['ansible_network_os'] is undefined)
+  when: hostvars[execution_device]['ansible_network_os'] is not defined or hostvars[execution_device]['ansible_network_os'] is undefined
   ignore_errors: true
-
-- name: "Store proxy ping results"
-  set_fact:
-    result_{{ task_id }}:
-      status: "{{ 'passed' if ping_result_proxy.rc == 0 else 'failed' }}"
-      stdout: "{{ ping_result_proxy.stdout | default('') }}"
-      stderr: "{{ ping_result_proxy.stderr | default('') }}"
-      rc: "{{ ping_result_proxy.rc | default(1) }}"
-      raw: "{{ ping_result_proxy }}"
-      custom:
-        target: "{{ target_ip | default(target_device) }}"
-        packets_sent: "{{ ping_count | default(3) }}"
-        packets_received: "{{ ping_result_proxy.stdout.split(' received')[0].split()[-1] if ' received' in ping_result_proxy.stdout else '0' }}"
-        success_rate: "{{ ((ping_result_proxy.stdout.split(' received')[0].split()[-1] | int) / (ping_count | default(3)) * 100) | round(1) if ' received' in ping_result_proxy.stdout else 0 }}"
-        avg_rtt: "{{ ping_result_proxy.stdout.split('rtt min/avg/max/mdev = ')[1].split('/')[1] if 'rtt min/avg/max/mdev = ' in ping_result_proxy.stdout else '0' }}"
-        proxy_execution: true
-        proxy_host: "{{ proxy_host }}"
-  when: proxy_host is defined and proxy_host_ip is defined
-  tags:
-    - test_id:{{ task_id }}
-    - result_storage
 
 - name: "Store network device ping results"
   set_fact:
     result_{{ task_id }}:
-      status: "{{ 'passed' if not ping_result_net.failed else 'failed' }}"
-      stdout: "{{ ping_result_net.stdout | default('') }}"
-      stderr: "{{ ping_result_net.stderr | default('') }}"
-      rc: "{{ 0 if not ping_result_net.failed else 1 }}"
-      raw: "{{ ping_result_net }}"
+      status: "{{ 'passed' if ping_result_net is defined and not ping_result_net.failed else 'failed' }}"
+      stdout: "{{ ping_result_net.stdout | default('') if ping_result_net is defined else '' }}"
+      stderr: "{{ ping_result_net.stderr | default('') if ping_result_net is defined else '' }}"
+      rc: "{{ 0 if ping_result_net is defined and not ping_result_net.failed else 1 }}"
+      raw: "{{ ping_result_net | default({}) }}"
       custom:
         target: "{{ target_ip | default(target_device) }}"
         packets_sent: "{{ ping_count | default(3) }}"
-        packets_received: "{{ ping_count | default(3) if not ping_result_net.failed else 0 }}"
-        success_rate: "{{ 100 if not ping_result_net.failed else 0 }}"
-        avg_rtt: "{{ ping_result_net.rtt.avg | default(0) if ping_result_net.rtt is defined else 0 }}"
-        proxy_execution: false
-  when: proxy_host is not defined and hostvars[execution_device]['ansible_network_os'] is defined
+        packets_received: "{{ ping_count | default(3) if ping_result_net is defined and not ping_result_net.failed else 0 }}"
+        success_rate: "{{ 100 if ping_result_net is defined and not ping_result_net.failed else 0 }}"
+        avg_rtt: "{{ ping_result_net.rtt.avg | default(0) if ping_result_net is defined and ping_result_net.rtt is defined else 0 }}"
+        proxy_execution: "{{ hostvars[execution_device].proxy_host is defined and hostvars[execution_device].proxy_host != '' }}"
+        proxy_host: "{{ hostvars[execution_device].proxy_host | default('') }}"
+        device_type: "network"
+  when: hostvars[execution_device]['ansible_network_os'] is defined and ping_result_net is defined
   tags:
     - test_id:{{ task_id }}
     - result_storage
@@ -66,19 +46,21 @@
 - name: "Store Linux server ping results"
   set_fact:
     result_{{ task_id }}:
-      status: "{{ 'passed' if ping_result_linux.rc == 0 else 'failed' }}"
-      stdout: "{{ ping_result_linux.stdout | default('') }}"
-      stderr: "{{ ping_result_linux.stderr | default('') }}"
-      rc: "{{ ping_result_linux.rc | default(1) }}"
-      raw: "{{ ping_result_linux }}"
+      status: "{{ 'passed' if ping_result_linux is defined and ping_result_linux.rc == 0 else 'failed' }}"
+      stdout: "{{ ping_result_linux.stdout | default('') if ping_result_linux is defined else '' }}"
+      stderr: "{{ ping_result_linux.stderr | default('') if ping_result_linux is defined else '' }}"
+      rc: "{{ ping_result_linux.rc | default(1) if ping_result_linux is defined else 1 }}"
+      raw: "{{ ping_result_linux | default({}) }}"
       custom:
         target: "{{ target_ip | default(target_device) }}"
         packets_sent: "{{ ping_count | default(3) }}"
-        packets_received: "{{ ping_result_linux.stdout.split(' received')[0].split()[-1] if ' received' in ping_result_linux.stdout else '0' }}"
-        success_rate: "{{ ((ping_result_linux.stdout.split(' received')[0].split()[-1] | int) / (ping_count | default(3)) * 100) | round(1) if ' received' in ping_result_linux.stdout else 0 }}"
-        avg_rtt: "{{ ping_result_linux.stdout.split('rtt min/avg/max/mdev = ')[1].split('/')[1] if 'rtt min/avg/max/mdev = ' in ping_result_linux.stdout else '0' }}"
-        proxy_execution: false
-  when: proxy_host is not defined and (hostvars[execution_device]['ansible_network_os'] is not defined or hostvars[execution_device]['ansible_network_os'] is undefined)
+        packets_received: "{{ ping_result_linux.stdout.split(' received')[0].split()[-1] if ping_result_linux is defined and ' received' in ping_result_linux.stdout else '0' }}"
+        success_rate: "{{ ((ping_result_linux.stdout.split(' received')[0].split()[-1] | int) / (ping_count | default(3)) * 100) | round(1) if ping_result_linux is defined and ' received' in ping_result_linux.stdout else 0 }}"
+        avg_rtt: "{{ ping_result_linux.stdout.split('rtt min/avg/max/mdev = ')[1].split('/')[1] if ping_result_linux is defined and 'rtt min/avg/max/mdev = ' in ping_result_linux.stdout else '0' }}"
+        proxy_execution: "{{ hostvars[execution_device].proxy_host is defined and hostvars[execution_device].proxy_host != '' }}"
+        proxy_host: "{{ hostvars[execution_device].proxy_host | default('') }}"
+        device_type: "linux"
+  when: (hostvars[execution_device]['ansible_network_os'] is not defined or hostvars[execution_device]['ansible_network_os'] is undefined) and ping_result_linux is defined
   tags:
     - test_id:{{ task_id }}
     - result_storage

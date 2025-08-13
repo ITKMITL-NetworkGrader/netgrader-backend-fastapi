@@ -16,6 +16,6 @@ class ApiClient:
             return True
         except requests.RequestException as e:
             # Handle/log error as needed
-            logging.error(f"API request failed: {e}")  
+            logging.error(f"API request failed: {e}")
             return False
         
