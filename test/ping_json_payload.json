@@ -7,12 +7,11 @@
     "title": "PC and Switch Connectivity Test",
     "play": {
       "play_id": "play1",
-      "source_device": "pc1",
-      "target_device": "pc2",
       "ansible_tasks": [
         {
           "task_id": "task0",
           "template_name": "linux_ip_check",
+          "execution_device": "pc1",
           "parameters": {
             "expected_ip": "192.168.101.2"
           },
@@ -28,6 +27,8 @@
         {
           "task_id": "task1",
           "template_name": "network_ping",
+          "execution_device": "pc1",
+          "target_device": "pc2",
           "parameters": {
             "target_ip": "{{ pc2_ip }}",
             "ping_count": 3
@@ -44,6 +45,7 @@
         {
           "task_id": "task2",
           "template_name": "network_ping",
+          "execution_device": "pc1",
           "parameters": {
             "target_ip": "{{ switch_ip }}",
             "ping_count": 3

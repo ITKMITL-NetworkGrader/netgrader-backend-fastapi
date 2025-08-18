@@ -13,14 +13,15 @@
     
   tasks:
     {% for task in part.play.ansible_tasks %}
-    - name: "Task {{ task.task_id }}: {{ task.template_name }} ({{ part.play.source_device }} -> {{ part.play.target_device }})"
+    - name: "Task {{ task.task_id }}: {{ task.template_name }} ({{ task.execution_device }}{% if task.target_device %} -> {{ task.target_device }}{% endif %})"
       include_tasks: "{{ shared_tasks_dir }}/{{ task.template_name }}.j2"
       vars:
         task_id: "{{ task.task_id }}"
         points: {{ task.points | default(1) }}
-        source_device: "{{ part.play.source_device }}"
-        target_device: "{{ part.play.target_device }}"
-        execution_device: "{{ part.play.source_device }}"
+        execution_device: "{{ task.execution_device }}"
+        {% if task.target_device %}
+        target_device: "{{ task.target_device }}"
+        {% endif %}
         {% for key, value in task.parameters.items() %}
         {{ key }}: {{ value | tojson }}
         {% endfor %}

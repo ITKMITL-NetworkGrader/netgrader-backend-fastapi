@@ -1,0 +1,158 @@
+{
+  "job_id": "simplified_playbook_test_001",
+  "student_id": "student_simplified_001",
+  "lab_id": "lab_simplified_structure_001",
+  "part": {
+    "part_id": "part1",
+    "title": "Multi-Device Network Testing - Simplified Structure",
+    "play": {
+      "play_id": "play1",
+      "ansible_tasks": [
+        {
+          "task_id": "task1",
+          "template_name": "network_ping",
+          "execution_device": "router1",
+          "parameters": {
+            "target_ip": "{{ router2_mgmt_ip }}",
+            "ping_count": 5
+          },
+          "test_cases": [
+            {
+              "comparison_type": "greater_than",
+              "expected_result": 3
+            }
+          ],
+          "points": 15
+        },
+        {
+          "task_id": "task2",
+          "template_name": "network_ping",
+          "execution_device": "router1",
+          "parameters": {
+            "target_ip": "{{ server2_ip }}",
+            "ping_count": 3
+          },
+          "test_cases": [
+            {
+              "comparison_type": "success",
+              "expected_result": true
+            }
+          ],
+          "points": 10
+        },
+        {
+          "task_id": "task3",
+          "template_name": "service_check",
+          "execution_device": "server2",
+          "parameters": {
+            "service_name": "apache2",
+            "port": 80,
+            "expected_status": "active"
+          },
+          "test_cases": [
+            {
+              "comparison_type": "equals",
+              "expected_result": true
+            }
+          ],
+          "points": 20
+        },
+        {
+          "task_id": "task4",
+          "template_name": "linux_ip_check",
+          "execution_device": "server2",
+          "parameters": {
+            "interface_name": "eth0",
+            "expected_ip": "192.168.1.20"
+          },
+          "test_cases": [
+            {
+              "comparison_type": "contains",
+              "expected_result": "192.168.1.20"
+            }
+          ],
+          "points": 15
+        },
+        {
+          "task_id": "task5",
+          "template_name": "network_ping",
+          "execution_device": "router1",
+          "parameters": {
+            "target_ip": "8.8.8.8",
+            "ping_count": 2
+          },
+          "test_cases": [
+            {
+              "comparison_type": "success",
+              "expected_result": true
+            }
+          ],
+          "points": 10
+        }
+      ]
+    }
+  },
+  "devices": [
+    {
+      "id": "router1",
+      "ip_address": "10.0.1.1",
+      "ansible_connection": "ansible.netcommon.network_cli",
+      "credentials": {
+        "ansible_user": "admin",
+        "ansible_password": "cisco123"
+      },
+      "platform": "cisco.ios.ios",
+      "jump_host": null,
+      "ssh_args": null,
+      "use_persistent_connection": false
+    },
+    {
+      "id": "router2",
+      "ip_address": "10.0.2.1",
+      "ansible_connection": "ansible.netcommon.network_cli",
+      "credentials": {
+        "ansible_user": "admin",
+        "ansible_password": "cisco123"
+      },
+      "platform": "cisco.ios.ios",
+      "jump_host": null,
+      "ssh_args": null,
+      "use_persistent_connection": false
+    },
+    {
+      "id": "server1",
+      "ip_address": "192.168.1.10",
+      "ansible_connection": "ssh",
+      "credentials": {
+        "ansible_user": "ubuntu",
+        "ansible_password": "server123"
+      },
+      "platform": null,
+      "jump_host": null,
+      "ssh_args": null,
+      "use_persistent_connection": false
+    },
+    {
+      "id": "server2",
+      "ip_address": "192.168.1.20",
+      "ansible_connection": "ssh",
+      "credentials": {
+        "ansible_user": "ubuntu",
+        "ansible_password": "server123"
+      },
+      "platform": null,
+      "jump_host": null,
+      "ssh_args": null,
+      "use_persistent_connection": false
+    }
+  ],
+  "ip_mappings": {
+    "router1_mgmt_ip": "10.0.1.1",
+    "router2_mgmt_ip": "10.0.2.1",
+    "server1_ip": "192.168.1.10",
+    "server2_ip": "192.168.1.20",
+    "network_subnet": "192.168.1.0/24",
+    "external_dns": "8.8.8.8"
+  },
+  "callback_url": "http://main-server:4000/api/v1/grading/callbacks"
+}

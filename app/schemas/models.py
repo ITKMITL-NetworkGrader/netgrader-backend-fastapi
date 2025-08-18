@@ -29,14 +29,14 @@ class AnsibleTask(BaseModel):
     task_id: str
     name: Optional[str] = None
     template_name: str
+    execution_device: str = Field(..., description="Primary device where task executes")
+    target_device: Optional[str] = Field(None, description="Optional target device for multi-device tasks")
     parameters: Dict[str, Any] = Field(default_factory=dict)
     test_cases: List[TestCase] = Field(default_factory=list)
     points: int = Field(default=1)
 
 class Play(BaseModel):
     play_id: str
-    source_device: str
-    target_device: str
     ansible_tasks: List[AnsibleTask]
 
 class Part(BaseModel):
