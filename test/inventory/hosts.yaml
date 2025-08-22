@@ -1,0 +1,7 @@
+---
+router1:
+  hostname: 10.70.38.2
+  username: admin
+  password: cisco
+  groups:
+    - cisco_devices

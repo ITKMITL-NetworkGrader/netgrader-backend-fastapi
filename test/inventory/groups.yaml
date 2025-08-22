@@ -1,0 +1,8 @@
+---
+cisco_devices:
+  platform: ios
+  connection_options:
+    netmiko:
+      platform: cisco_ios
+      extras:
+        device_type: cisco_ios

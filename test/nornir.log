@@ -1,0 +1,96 @@
+2025-08-21 18:07:55,896 -  nornir.core -  WARNING -        run() - Task 'get_ip_interface - show ip interface brief' has not been run – 0 hosts selected
+2025-08-21 18:07:55,907 -  nornir.core -  WARNING -        run() - Task 'ping_test - ping 1.1.1.1' has not been run – 0 hosts selected
+2025-08-21 18:07:55,908 -  nornir.core -  WARNING -        run() - Task 'get_device_facts' has not been run – 0 hosts selected
+2025-08-21 18:08:30,934 -  nornir.core -  WARNING -        run() - Task 'get_ip_interface - show ip interface brief' has not been run – 0 hosts selected
+2025-08-21 18:08:30,935 -  nornir.core -  WARNING -        run() - Task 'ping_test - ping 1.1.1.1' has not been run – 0 hosts selected
+2025-08-21 18:08:30,936 -  nornir.core -  WARNING -        run() - Task 'get_device_facts' has not been run – 0 hosts selected
+2025-08-21 18:09:37,923 -  nornir.core -  WARNING -        run() - Task 'get_ip_interface - show ip interface brief' has not been run – 0 hosts selected
+2025-08-21 18:09:37,923 -  nornir.core -  WARNING -        run() - Task 'ping_test - ping 1.1.1.1' has not been run – 0 hosts selected
+2025-08-21 18:09:37,924 -  nornir.core -  WARNING -        run() - Task 'get_device_facts' has not been run – 0 hosts selected
+2025-08-21 18:10:35,562 -  nornir.core -     INFO -        run() - Running task 'get_ip_interface - show ip interface brief' with args {'command_string': 'show ip interface brief'} on 1 hosts
+2025-08-21 18:10:36,191 -  nornir.core -     INFO -        run() - Running task 'ping_test - ping 1.1.1.1' with args {'command_string': 'ping 1.1.1.1'} on 1 hosts
+2025-08-21 18:10:36,410 -  nornir.core -     INFO -        run() - Running task 'get_device_facts' with args {'getters': ['facts', 'interfaces']} on 1 hosts
+2025-08-21 18:11:28,481 -  nornir.core -     INFO -        run() - Running task 'get_ip_interface - show ip interface brief' with args {'command_string': 'show ip interface brief'} on 1 hosts
+2025-08-21 18:11:29,090 -  nornir.core -     INFO -        run() - Running task 'ping_test - ping 1.1.1.1' with args {'command_string': 'ping 1.1.1.1'} on 1 hosts
+2025-08-21 18:11:29,309 -  nornir.core -     INFO -        run() - Running task 'get_device_facts' with args {'getters': ['facts', 'interfaces']} on 1 hosts
+2025-08-21 18:12:55,206 -  nornir.core -  WARNING -        run() - Task 'get_ip_interface - show ip interface brief' has not been run – 0 hosts selected
+2025-08-21 18:12:55,207 -  nornir.core -  WARNING -        run() - Task 'ping_test - ping 1.1.1.1' has not been run – 0 hosts selected
+2025-08-21 18:12:55,207 -  nornir.core -  WARNING -        run() - Task 'get_device_facts' has not been run – 0 hosts selected
+2025-08-21 18:13:46,960 -  nornir.core -  WARNING -        run() - Task 'get_ip_interface - show ip interface brief' has not been run – 0 hosts selected
+2025-08-21 18:13:46,961 -  nornir.core -  WARNING -        run() - Task 'ping_test - ping 1.1.1.1' has not been run – 0 hosts selected
+2025-08-21 18:13:46,962 -  nornir.core -  WARNING -        run() - Task 'get_device_facts' has not been run – 0 hosts selected
+2025-08-21 20:17:51,250 -  nornir.core -     INFO -        run() - Running task 'get_ip_interface - show ip interface brief' with args {'command_string': 'show ip interface brief'} on 1 hosts
+2025-08-21 20:17:51,870 -  nornir.core -     INFO -        run() - Running task 'ping_test - ping 1.1.1.1' with args {'command_string': 'ping 1.1.1.1'} on 1 hosts
+2025-08-21 20:17:52,115 -  nornir.core -     INFO -        run() - Running task 'get_device_facts' with args {'getters': ['facts', 'interfaces']} on 1 hosts
+2025-08-21 20:23:00,271 -  nornir.core -     INFO -        run() - Running task 'get_ip_interface - show ip interface brief' with args {'command_string': 'show ip interface brief'} on 1 hosts
+2025-08-21 20:23:00,904 -  nornir.core -     INFO -        run() - Running task 'ping_test - ping 1.1.1.1' with args {'command_string': 'ping 1.1.1.1'} on 1 hosts
+2025-08-21 20:23:01,122 -  nornir.core -     INFO -        run() - Running task 'get_device_facts' with args {'getters': ['facts', 'interfaces', 'interfaces_ip']} on 1 hosts
+2025-08-21 20:37:49,466 -  nornir.core -     INFO -        run() - Running task 'get_ip_interface - show ip interface brief' with args {'command_string': 'show ip interface brief'} on 1 hosts
+2025-08-21 20:37:50,108 -  nornir.core -     INFO -        run() - Running task 'ping_test - ping 1.1.1.1' with args {'command_string': 'ping 1.1.1.1'} on 1 hosts
+2025-08-21 20:37:50,326 -  nornir.core -     INFO -        run() - Running task 'get_device_facts' with args {'getters': ['facts', 'interfaces', 'interfaces_ip']} on 1 hosts
+2025-08-21 20:40:11,728 -  nornir.core -     INFO -        run() - Running task 'get_ip_interface - conf t' with args {'command_string': 'conf t'} on 1 hosts
+2025-08-21 20:40:22,410 - nornir.core.task -    ERROR -      start() - Host 'router1': task 'get_ip_interface - conf t' failed with traceback:
+Traceback (most recent call last):
+  File "/mnt/d/project/NetGrader2025/netgrader-backend-fastapi/.venv/lib/python3.12/site-packages/nornir/core/task.py", line 98, in start
+    r = self.task(self, **self.params)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/d/project/NetGrader2025/netgrader-backend-fastapi/.venv/lib/python3.12/site-packages/nornir_netmiko/tasks/netmiko_send_command.py", line 32, in netmiko_send_command
+    result = net_connect.send_command(command_string, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/d/project/NetGrader2025/netgrader-backend-fastapi/.venv/lib/python3.12/site-packages/netmiko/base_connection.py", line 111, in wrapper_decorator
+    return_val = func(self, *args, **kwargs)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/d/project/NetGrader2025/netgrader-backend-fastapi/.venv/lib/python3.12/site-packages/netmiko/utilities.py", line 667, in wrapper_decorator
+    return func(self, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/d/project/NetGrader2025/netgrader-backend-fastapi/.venv/lib/python3.12/site-packages/netmiko/base_connection.py", line 1841, in send_command
+    raise ReadTimeout(msg)
+netmiko.exceptions.ReadTimeout: 
+Pattern not detected: 'dummy\\#' in output.
+
+Things you might try to fix this:
+1. Explicitly set your pattern using the expect_string argument.
+2. Increase the read_timeout to a larger value.
+
+You can also look at the Netmiko session_log or debug log for more information.
+
+
+
+2025-08-21 20:40:22,411 -  nornir.core -  WARNING -        run() - Task 'get_ip_interface - do sh vlan' has not been run – 0 hosts selected
+2025-08-21 20:40:22,412 -  nornir.core -  WARNING -        run() - Task 'ping_test - ping 1.1.1.1' has not been run – 0 hosts selected
+2025-08-21 20:40:22,412 -  nornir.core -  WARNING -        run() - Task 'get_device_facts' has not been run – 0 hosts selected
+2025-08-21 20:41:32,037 -  nornir.core -     INFO -        run() - Running task 'get_ip_interface - sh vlan' with args {'command_string': 'sh vlan'} on 1 hosts
+2025-08-21 20:41:32,670 -  nornir.core -     INFO -        run() - Running task 'ping_test - ping 1.1.1.1' with args {'command_string': 'ping 1.1.1.1'} on 1 hosts
+2025-08-21 20:41:32,888 -  nornir.core -     INFO -        run() - Running task 'get_device_facts' with args {'getters': ['facts', 'interfaces', 'interfaces_ip']} on 1 hosts
+2025-08-21 20:59:50,996 -  nornir.core -     INFO -        run() - Running task 'get_ip_interface' with args {'config_commands': ['conf t', 'do sh ip route']} on 1 hosts
+2025-08-21 20:59:51,691 -  nornir.core -     INFO -        run() - Running task 'ping_test - ping 1.1.1.1' with args {'command_string': 'ping 1.1.1.1'} on 1 hosts
+2025-08-21 20:59:51,909 -  nornir.core -     INFO -        run() - Running task 'get_device_facts' with args {'getters': ['facts', 'interfaces', 'interfaces_ip', 'interfaces_counters', 'arp_table', 'mac_address_table', 'route_table', 'bgp_neighbors', 'lldp_neighbors']} on 1 hosts
+2025-08-21 20:59:54,565 - nornir.core.task -    ERROR -      start() - Host 'router1': task 'get_device_facts' failed with traceback:
+Traceback (most recent call last):
+  File "/mnt/d/project/NetGrader2025/netgrader-backend-fastapi/.venv/lib/python3.12/site-packages/nornir/core/task.py", line 98, in start
+    r = self.task(self, **self.params)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/d/project/NetGrader2025/netgrader-backend-fastapi/.venv/lib/python3.12/site-packages/nornir_napalm/plugins/tasks/napalm_get.py", line 43, in napalm_get
+    method = getattr(device, getter)
+             ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'IOSDriver' object has no attribute 'get_route_table'. Did you mean: 'get_route_to'?
+
+2025-08-21 21:00:53,314 -  nornir.core -     INFO -        run() - Running task 'get_ip_interface' with args {'config_commands': ['conf t', 'do sh ip route']} on 1 hosts
+2025-08-21 21:00:54,007 -  nornir.core -     INFO -        run() - Running task 'ping_test - ping 1.1.1.1' with args {'command_string': 'ping 1.1.1.1'} on 1 hosts
+2025-08-21 21:00:54,225 -  nornir.core -     INFO -        run() - Running task 'get_device_facts' with args {'getters': ['facts', 'interfaces', 'interfaces_ip', 'interfaces_counters', 'arp_table', 'mac_address_table', 'route_toe', 'bgp_neighbors', 'lldp_neighbors']} on 1 hosts
+2025-08-21 21:00:56,111 - nornir.core.task -    ERROR -      start() - Host 'router1': task 'get_device_facts' failed with traceback:
+Traceback (most recent call last):
+  File "/mnt/d/project/NetGrader2025/netgrader-backend-fastapi/.venv/lib/python3.12/site-packages/nornir/core/task.py", line 98, in start
+    r = self.task(self, **self.params)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/d/project/NetGrader2025/netgrader-backend-fastapi/.venv/lib/python3.12/site-packages/nornir_napalm/plugins/tasks/napalm_get.py", line 43, in napalm_get
+    method = getattr(device, getter)
+             ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'IOSDriver' object has no attribute 'get_route_toe'. Did you mean: 'get_route_to'?
+
+2025-08-21 21:01:12,842 -  nornir.core -     INFO -        run() - Running task 'get_ip_interface' with args {'config_commands': ['conf t', 'do sh ip route']} on 1 hosts
+2025-08-21 21:01:13,738 -  nornir.core -     INFO -        run() - Running task 'ping_test - ping 1.1.1.1' with args {'command_string': 'ping 1.1.1.1'} on 1 hosts
+2025-08-21 21:01:13,956 -  nornir.core -     INFO -        run() - Running task 'get_device_facts' with args {'getters': ['facts', 'interfaces', 'interfaces_ip', 'interfaces_counters', 'arp_table', 'mac_address_table', 'route_to', 'bgp_neighbors', 'lldp_neighbors']} on 1 hosts
+2025-08-21 21:04:19,554 -  nornir.core -     INFO -        run() - Running task 'get_ip_interface' with args {'config_commands': ['conf t', 'do sh ip route']} on 1 hosts
+2025-08-21 21:04:20,231 -  nornir.core -     INFO -        run() - Running task 'ping_test - ping 1.1.1.1' with args {'command_string': 'ping 1.1.1.1'} on 1 hosts
+2025-08-21 21:04:20,474 -  nornir.core -     INFO -        run() - Running task 'get_device_facts' with args {'getters': ['facts', 'interfaces', 'interfaces_ip', 'interfaces_counters', 'arp_table', 'mac_address_table', 'route_to', 'bgp_neighbors', 'lldp_neighbors']} on 1 hosts
