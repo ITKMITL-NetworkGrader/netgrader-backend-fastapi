@@ -5,7 +5,12 @@ from typing import Optional
 import aio_pika
 from aio_pika import connect_robust, Message, IncomingMessage
 from app.schemas.models import GradingJob
-from app.services.grading_service import GradingService
+# Legacy imports (no longer used)
+# from app.services.grading_service import GradingService
+# from app.services.nornir_grading.network_grading_service import NetworkGradingService
+
+# Current grading service
+from app.services.simple_grading_service import SimpleGradingService as GradingService
 from app.core.config import config
 
 logger = logging.getLogger(__name__)

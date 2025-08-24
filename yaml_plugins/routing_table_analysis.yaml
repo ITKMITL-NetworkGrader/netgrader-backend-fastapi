@@ -1,0 +1,95 @@
+# Routing Table Analysis - YAML DSL Example  
+# Demonstrates complex parsing and analysis of routing information
+
+template_name: "routing_table_analysis"
+description: "Analyze routing table for specific routes and calculate routing metrics"
+connection_type: "napalm"
+
+parameters:
+  target_network:
+    type: string
+    description: "Target network to analyze in routing table"
+    required: true
+    pattern: "^\\d+\\.\\d+\\.\\d+\\.\\d+$"
+  min_routes:
+    type: integer
+    description: "Minimum number of routes expected"
+    default: 5
+    min: 1
+    max: 1000
+  require_default:
+    type: boolean
+    description: "Whether a default route is required"
+    default: true
+  check_redundancy:
+    type: boolean
+    description: "Whether to check for route redundancy"
+    default: false
+
+steps:
+  - name: "Get routing table"
+    action: "command"
+    command: "show ip route"
+    register: "routing_table"
+  
+  - name: "Parse default route"
+    action: "parse_output"
+    input: "{{ routing_table.stdout }}"
+    pattern: "\\*?\\s*0\\.0\\.0\\.0/0.*via\\s+(\\d+\\.\\d+\\.\\d+\\.\\d+)"
+    register: "default_route"
+  
+  - name: "Parse specific network routes"
+    action: "parse_output" 
+    input: "{{ routing_table.stdout }}"
+    pattern: "{{ target_network }}/\\d+.*via\\s+(\\d+\\.\\d+\\.\\d+\\.\\d+)"
+    register: "target_routes"
+  
+  - name: "Count total routes"
+    action: "parse_output"
+    input: "{{ routing_table.stdout }}"
+    pattern: "^[RC\\*].*\\d+\\.\\d+\\.\\d+\\.\\d+/\\d+"
+    register: "all_routes"
+  
+  - name: "Parse OSPF routes"
+    action: "parse_output"
+    input: "{{ routing_table.stdout }}"
+    pattern: "^O.*\\d+\\.\\d+\\.\\d+\\.\\d+/\\d+"
+    register: "ospf_routes"
+  
+  - name: "Parse static routes"
+    action: "parse_output"
+    input: "{{ routing_table.stdout }}"
+    pattern: "^S.*\\d+\\.\\d+\\.\\d+\\.\\d+/\\d+"
+    register: "static_routes"
+  
+  - name: "Parse connected routes"
+    action: "parse_output"
+    input: "{{ routing_table.stdout }}"
+    pattern: "^C.*\\d+\\.\\d+\\.\\d+\\.\\d+/\\d+"
+    register: "connected_routes"
+  
+  - name: "Validate routing requirements"
+    action: "assert"
+    condition: "default_route.matches and target_routes.matches and all_routes.matches|length >= min_routes|default(5)"
+    message: "Routing table meets requirements: default route, target networks, and minimum route count"
+  
+  - name: "Analyze route redundancy"
+    action: "parse_output"
+    input: "{{ routing_table.stdout }}"
+    pattern: "{{ target_network }}/\\d+.*\\[\\d+/\\d+\\].*via\\s+\\d+\\.\\d+\\.\\d+\\.\\d+"
+    register: "redundant_routes"
+  
+  - name: "Set routing analysis results"
+    action: "set_result" 
+    status: "{{ 'passed' if routing_healthy else 'failed' }}"
+    has_default_route: "{{ default_route.matches|length > 0 }}"
+    default_gateway: "{{ default_route.matches[0] if default_route.matches else 'none' }}"
+    target_network_reachable: "{{ target_routes.matches|length > 0 }}"
+    target_next_hops: "{{ target_routes.matches }}"
+    total_routes: "{{ all_routes.matches|length }}"
+    ospf_route_count: "{{ ospf_routes.matches|length }}"
+    static_route_count: "{{ static_routes.matches|length }}"
+    connected_route_count: "{{ connected_routes.matches|length }}"
+    has_redundancy: "{{ redundant_routes.matches|length > 1 }}"
+    routing_protocol_diversity: "{{ (ospf_routes.matches|length > 0)|int + (static_routes.matches|length > 0)|int }}"
+    routing_healthy: "{{ default_route.matches and target_routes.matches and all_routes.matches|length >= min_routes|default(5) }}"
