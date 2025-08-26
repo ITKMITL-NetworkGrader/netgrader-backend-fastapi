@@ -11,7 +11,6 @@ import time
 from datetime import datetime
 from typing import Dict, Any, List, Optional
 from enum import Enum
-
 # Import existing models and services
 from app.schemas.models import GradingJob, TestResult, GradingResult, Device, AnsibleTask, ProgressUpdate
 from app.services.api_client import APIClient as ApiClient
@@ -20,6 +19,8 @@ from app.services.scoring_service import ScoringService
 # Import our working components
 from .plugin_system import PluginBasedGrader
 from .network_grader import Device as SimpleDevice, TaskResult, TaskStatus
+from .snmp_detection import DeviceDetectionService
+from app.core.config import config
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +35,15 @@ class SimpleGradingService:
         self.scoring_service = ScoringService()
         self.grader = PluginBasedGrader()
         self._initialized = False
+        
+        # Initialize SNMP device detection service
+        if config.SNMP_ENABLED:
+            self.device_detector = DeviceDetectionService(
+                snmp_community=config.SNMP_COMMUNITY,
+                snmp_timeout=config.SNMP_TIMEOUT
+            )
+        else:
+            self.device_detector = None
     
     async def initialize(self):
         """Initialize the grading service"""
@@ -155,14 +165,12 @@ class SimpleGradingService:
                 # Add IP mappings for parameter resolution
                 **ip_mappings
             })
-            
             task_result = await self.grader.execute_plugin_task(
                 task_id=task.task_id,
                 plugin_name=plugin_name,
                 device_id=task.execution_device,
                 parameters=enhanced_params
             )
-            print(task_result)
             # Convert to TestResult
             test_result = self._convert_task_result(task_result, task)
             test_results.append(test_result)
@@ -329,26 +337,95 @@ class SimpleGradingService:
         return connectivity
     
     async def detect_devices(self, job: GradingJob) -> Dict[str, Dict[str, Any]]:
-        """Simple device detection"""
-        logger.info("Detecting devices...")
+        """Enhanced device detection with SNMP support and static fallback"""
+        logger.info("Starting enhanced device detection...")
         
         detection_results = {}
         
-        for device in job.devices:
-            # Simple detection based on IP and platform hints
-            if device.platform and "ios" in device.platform.lower():
-                detection_results[device.id] = {
-                    "platform": "cisco_ios",
-                    "vendor": "Cisco",
-                    "device_type": "network_device"
-                }
-            else:
-                detection_results[device.id] = {
-                    "platform": "linux",
-                    "vendor": "Generic",
-                    "device_type": "server"
-                }
+        # Try SNMP detection if enabled
+        if self.device_detector and config.SNMP_ENABLED:
+            try:
+                logger.info("Attempting SNMP-based device detection...")
+                
+                # Convert devices to the format expected by DeviceDetectionService
+                device_list = []
+                for device in job.devices:
+                    device_list.append({
+                        'id': device.id,
+                        'ip_address': device.ip_address,
+                        'platform': device.platform,
+                        'credentials': device.credentials
+                    })
+                
+                # Perform enhanced SNMP detection
+                snmp_results = await self.device_detector.enhanced_detect_devices(device_list)
+                
+                if snmp_results:
+                    logger.info(f"SNMP detection successful for {len(snmp_results)} devices")
+                    detection_results.update(snmp_results)
+                
+                # Add smart plugin selection based on SNMP detection
+                for device_id, result in detection_results.items():
+                    if 'optimal_plugins' in result:
+                        logger.debug(f"Device {device_id} optimal plugins: {result['optimal_plugins']}")
+                
+            except Exception as e:
+                logger.error(f"SNMP device detection failed: {e}")
+                logger.info("Falling back to static device detection")
+                detection_results = {}
         
+        # Fallback to static detection for any devices not detected via SNMP
+        for device in job.devices:
+            if device.id not in detection_results:
+                logger.debug(f"Using static detection for device {device.id}")
+                
+                # Enhanced static detection with more intelligence
+                if device.platform and "ios" in device.platform.lower():
+                    detection_results[device.id] = {
+                        "detection_method": "static",
+                        "platform": "cisco_ios",
+                        "vendor": "Cisco",
+                        "model": "Unknown",
+                        "device_type": "cisco_router",
+                        "os_version": "Unknown",
+                        "snmp_enabled": False,
+                        "optimal_plugins": ["napalm", "ping", "command"],
+                        "detection_time": 0.0,
+                        "raw_data": {}
+                    }
+                elif device.platform and "linux" in device.platform.lower():
+                    detection_results[device.id] = {
+                        "detection_method": "static",
+                        "platform": "linux",
+                        "vendor": "Linux",
+                        "model": "Generic",
+                        "device_type": "linux_server",
+                        "os_version": "Unknown",
+                        "snmp_enabled": False,
+                        "optimal_plugins": ["command", "ping"],
+                        "detection_time": 0.0,
+                        "raw_data": {}
+                    }
+                else:
+                    # Generic fallback
+                    detection_results[device.id] = {
+                        "detection_method": "static", 
+                        "platform": "generic",
+                        "vendor": "Unknown",
+                        "model": "Unknown",
+                        "device_type": "unknown",
+                        "os_version": "Unknown",
+                        "snmp_enabled": False,
+                        "optimal_plugins": ["ping", "command"],
+                        "detection_time": 0.0,
+                        "raw_data": {}
+                    }
+        
+        # Log detection summary
+        snmp_count = sum(1 for r in detection_results.values() if r.get('detection_method') == 'snmp')
+        static_count = sum(1 for r in detection_results.values() if r.get('detection_method') == 'static')
+        
+        logger.info(f"Device detection completed: {snmp_count} via SNMP, {static_count} via static detection")
         return detection_results
     
     def cleanup_old_files(self):

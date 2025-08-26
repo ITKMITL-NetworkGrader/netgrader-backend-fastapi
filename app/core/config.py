@@ -22,5 +22,11 @@ class Config:
     
     # Logging
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
+    
+    # SNMP Configuration for device detection
+    SNMP_COMMUNITY: str = os.getenv("SNMP_COMMUNITY", "netgrader")
+    SNMP_TIMEOUT: int = int(os.getenv("SNMP_TIMEOUT", "3"))
+    SNMP_RETRIES: int = int(os.getenv("SNMP_RETRIES", "1"))
+    SNMP_ENABLED: bool = os.getenv("SNMP_ENABLED", "true").lower() == "true"
 
 config = Config()
