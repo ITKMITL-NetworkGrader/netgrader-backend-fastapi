@@ -10,7 +10,6 @@ import yaml
 import logging
 from abc import ABC, abstractmethod
 from typing import Dict, Any, List, Optional
-from dataclasses import dataclass
 from enum import Enum
 
 # Import our working base

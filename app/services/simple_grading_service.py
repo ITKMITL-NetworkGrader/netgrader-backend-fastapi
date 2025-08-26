@@ -6,11 +6,9 @@ providing a drop-in replacement for the complex Nornir system.
 """
 
 import logging
-import asyncio
 import time
 from datetime import datetime
-from typing import Dict, Any, List, Optional
-from enum import Enum
+from typing import Dict, Any
 # Import existing models and services
 from app.schemas.models import GradingJob, TestResult, GradingResult, Device, AnsibleTask, ProgressUpdate
 from app.services.api_client import APIClient as ApiClient

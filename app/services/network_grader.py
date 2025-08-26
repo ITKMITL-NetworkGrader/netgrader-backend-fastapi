@@ -5,11 +5,10 @@ A minimal implementation that demonstrates the core concept of network grading
 without complex dependencies. Uses basic SSH/paramiko and simple task execution.
 """
 
-import asyncio
 import logging
 import time
 import json
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List
 from dataclasses import dataclass
 from enum import Enum
 
