@@ -1,0 +1,41 @@
+# OSPF Neighbor Check - Custom Task Example
+# Demonstrates checking OSPF neighbor relationships on Cisco routers
+
+task_name: "ospf_neighbor_check"
+description: "Verify OSPF neighbor relationships and neighbor count"
+connection_type: "napalm"
+author: "NetGrader Team"
+version: "1.0.0"
+points: 15
+
+parameters:
+  - name: "expected_neighbors"
+    datatype: "integer"
+    description: "Expected number of OSPF neighbors"
+    required: false
+    example: "2"
+
+commands:
+  - name: "get_ospf_neighbors"
+    action: "napalm_get"
+    parameters:
+      getter: "get_bgp_neighbors_detail"  # Note: NAPALM doesn't have direct OSPF getter, using as example
+    register: "ospf_data"
+  
+  - name: "parse_neighbor_count"  
+    action: "parse_output"
+    parameters:
+      input: "{{ospf_data}}"
+      pattern: "Full/.*?(?=\\n|$)"
+    register: "neighbor_matches"
+
+validation:
+  - field: "neighbor_matches.match_count"
+    condition: "greater_than"
+    value: 0
+    description: "At least one OSPF neighbor in Full state should exist"
+  
+  - field: "ospf_data"
+    condition: "exists"
+    value: true
+    description: "OSPF neighbor data should be retrieved successfully"

@@ -1,0 +1,54 @@
+# Linux Service Health Check - Custom Task Example
+# Demonstrates checking service status and system health on Linux servers
+
+task_name: "linux_service_health"
+description: "Check critical service status and system health on Linux server"
+connection_type: "ssh"
+author: "NetGrader Team"
+version: "1.0.0"
+points: 8
+
+parameters:
+  # No specific parameters required - uses default system checks
+
+commands:
+  - name: "check_ssh_service"
+    action: "netmiko_send_command"
+    parameters:
+      command: "systemctl is-active sshd"
+    register: "ssh_status"
+  
+  - name: "check_network_interface"
+    action: "netmiko_send_command"
+    parameters:
+      command: "ip link show | grep 'state UP'"
+    register: "network_interfaces"
+  
+  - name: "parse_active_interfaces"
+    action: "parse_output"
+    parameters:
+      input: "{{network_interfaces}}"
+      pattern: "state UP"
+    register: "up_interface_count"
+  
+  - name: "check_disk_usage"
+    action: "netmiko_send_command"
+    parameters:
+      command: "df -h / | tail -n 1 | awk '{print $5}' | sed 's/%//'"
+    register: "disk_usage"
+
+validation:
+  - field: "ssh_status"
+    condition: "contains"
+    value: "active"
+    description: "SSH service should be active"
+  
+  - field: "up_interface_count.match_count"
+    condition: "greater_than"
+    value: 0
+    description: "At least one network interface should be up"
+  
+  - field: "disk_usage"
+    condition: "less_than"
+    value: 90
+    description: "Root filesystem usage should be less than 90%"

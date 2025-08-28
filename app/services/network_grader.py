@@ -8,7 +8,7 @@ without complex dependencies. Uses basic SSH/paramiko and simple task execution.
 import logging
 import time
 import json
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from dataclasses import dataclass
 from enum import Enum
 
@@ -48,6 +48,7 @@ class TaskResult:
     execution_time: float = 0.0
     points_earned: int = 0
     points_possible: int = 10
+    debug_info: Optional[Dict[str, Any]] = None
 
 class NetworkGrader:
     """Network grading implementation"""

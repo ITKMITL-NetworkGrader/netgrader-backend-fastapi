@@ -1,0 +1,63 @@
+# Debug Example Template - Shows how to use debug features
+# This template demonstrates debugging capabilities for instructors
+
+task_name: "debug_example"
+description: "Example template showing debug features for instructors"
+connection_type: "netmiko"
+author: "NetGrader Team"
+version: "1.0.0"
+points: 10
+
+parameters:
+  - name: "target_ip"
+    datatype: "ip_address | domain_name"
+    description: "Target to ping for testing"
+    required: true
+    example: "192.168.1.1"
+  - name: "ping_count"
+    datatype: "integer"
+    description: "Number of pings to send"
+    required: false
+    example: "3"
+
+# Debug configuration - instructors can enable what they want to see
+debug:
+  show_command_results: true          # Show output from each command
+  show_registered_variables: true     # Show all variables stored with 'register'
+  show_validation_details: true       # Show detailed validation results
+  show_parameter_substitution: true   # Show parameter values received
+  custom_debug_points:                # Specific variables to track
+    - "ping_result"
+    - "success_rate"
+
+commands:
+  - name: "ping_target"
+    action: "ping"
+    parameters:
+      target_ip: "{{target_ip}}"
+      ping_count: "{{ping_count}}"
+    register: "ping_result"
+  
+  - name: "parse_success_rate"
+    action: "parse_output"
+    parameters:
+      input: "{{ping_result}}"
+      pattern: "Success rate is (\\d+) percent"
+    register: "success_rate"
+  
+  - name: "check_connectivity"
+    action: "netmiko_send_command"
+    parameters:
+      command: "ping {{target_ip}} repeat 1"
+    register: "connectivity_check"
+
+validation:
+  - field: "success_rate.first_match"
+    condition: "greater_than"
+    value: 50
+    description: "Ping success rate should be greater than 50%"
+  
+  - field: "connectivity_check"
+    condition: "contains"
+    value: "Success rate"
+    description: "Connectivity check should show success rate"

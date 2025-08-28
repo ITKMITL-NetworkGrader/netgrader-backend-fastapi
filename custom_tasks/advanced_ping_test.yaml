@@ -1,0 +1,42 @@
+# Advanced Ping Test - Custom Task Example
+# Demonstrates multi-stage ping testing with conditional logic
+
+task_name: "advanced_ping_test"
+description: "Advanced ping test with packet loss analysis and retry logic"
+connection_type: "netmiko"
+author: "NetGrader Team"
+version: "1.0.0"
+points: 12
+
+parameters:
+  - name: "target_ip"
+    datatype: "ip_address | domain_name"
+    description: "Target IP address to ping"
+    required: true
+    example: "192.168.1.100"
+
+commands:
+  - name: "initial_ping"
+    action: "ping"
+    parameters:
+      target_ip: "{{target_ip}}"
+      ping_count: 5
+    register: "initial_result"
+  
+  - name: "parse_success_rate"
+    action: "parse_output"
+    parameters:
+      input: "{{initial_result}}"
+      pattern: "Success rate is (\\d+) percent"
+    register: "success_rate"
+
+validation:
+  - field: "success_rate.first_match"
+    condition: "greater_than"
+    value: 60
+    description: "Ping success rate should be greater than 60%"
+  
+  - field: "initial_result"
+    condition: "contains"
+    value: "Success rate"
+    description: "Ping output should contain success rate information"

@@ -1,8 +1,8 @@
 """
-Simple Grading Service - FastAPI Integration
+Simple Grading Service - FastAPI Integration with Nornir
 
-Integrates the working simple plugin system with the existing FastAPI application,
-providing a drop-in replacement for the complex Nornir system.
+Integrates Nornir-based grading system with device detection for
+automated network testing and grading.
 """
 
 import logging
@@ -10,28 +10,29 @@ import time
 from datetime import datetime
 from typing import Dict, Any
 # Import existing models and services
-from app.schemas.models import GradingJob, TestResult, GradingResult, Device, AnsibleTask, ProgressUpdate
+from app.schemas.models import GradingJob, TestResult, GradingResult, Device, AnsibleTask, ProgressUpdate, DebugInfo
 from app.services.api_client import APIClient as ApiClient
 from app.services.scoring_service import ScoringService
 
 # Import our working components
-from .plugin_system import PluginBasedGrader
+from .nornir_grading_service import NornirGradingService
 from .network_grader import Device as SimpleDevice, TaskResult, TaskStatus
 from .snmp_detection import DeviceDetectionService
+from .custom_task_registry import CustomTaskRegistry
 from app.core.config import config
 
 logger = logging.getLogger(__name__)
 
 class SimpleGradingService:
     """
-    Simple grading service that integrates with existing FastAPI infrastructure
-    while using the proven simple plugin approach.
+    Nornir-based grading service that integrates with existing FastAPI infrastructure
+    and includes automated device detection.
     """
     
     def __init__(self):
         self.api_client = ApiClient()
         self.scoring_service = ScoringService()
-        self.grader = PluginBasedGrader()
+        self.grader = NornirGradingService()
         self._initialized = False
         
         # Initialize SNMP device detection service
@@ -42,33 +43,71 @@ class SimpleGradingService:
             )
         else:
             self.device_detector = None
+        
+        # Initialize global task template registry
+        self.global_task_registry = CustomTaskRegistry(config.CUSTOM_TASK_REGISTRY_DIR)
     
     async def initialize(self):
         """Initialize the grading service"""
         if self._initialized:
             return
         
-        logger.info("Initializing Simple Grading Service...")
+        logger.info("Initializing Nornir Grading Service...")
         
-        # The simple grader initializes its plugin manager automatically
-        plugins = self.grader.plugin_manager.list_plugins()
-        logger.info(f"Loaded {len(plugins)} plugins: {', '.join(plugins)}")
+        # Nornir grader will initialize when needed
+        logger.info("Nornir grading service ready")
         
         self._initialized = True
-        logger.info("Simple Grading Service initialized successfully")
+        logger.info("Nornir Grading Service initialized successfully")
     
-    def _convert_device(self, device: Device) -> SimpleDevice:
-        """Convert FastAPI Device model to SimpleDevice"""
+    def _convert_device(self, device: Device, detection_results: Dict[str, Any] = None) -> SimpleDevice:
+        """Convert FastAPI Device model to SimpleDevice with detection results"""
+        
+        # Determine device_type using detection results or fallback to platform
+        device_type = "linux"  # Default
+        
+        if detection_results and device.id in detection_results:
+            detected = detection_results[device.id]
+            device_type = detected.get("device_type", device_type)
+            
+            # If device_type from detection is generic, try to infer from platform
+            if device_type == "unknown" or device_type == "generic":
+                if detected.get("platform"):
+                    if "ios" in detected["platform"].lower():
+                        device_type = "cisco_router"  # Default to router for IOS
+                    elif "linux" in detected["platform"].lower():
+                        device_type = "linux_server"
+        
+        # Fallback to platform-based detection if no detection results
+        if device_type == "linux" and device.platform:
+            if "ios" in device.platform.lower():
+                device_type = "cisco_router"
+            elif "linux" in device.platform.lower():
+                device_type = "linux_server"
+        
         return SimpleDevice(
             id=device.id,
             ip_address=device.ip_address,
             username=device.credentials.get("ansible_user", "admin"),
             password=device.credentials.get("ansible_password", ""),
-            device_type="cisco" if device.platform and "ios" in device.platform.lower() else "linux"
+            device_type=device_type
         )
     
     def _convert_task_result(self, task_result: TaskResult, task: AnsibleTask) -> TestResult:
         """Convert TaskResult to FastAPI TestResult model"""
+        # Check if task_result has debug_info attribute (for custom tasks)
+        debug_info = None
+        if hasattr(task_result, 'debug_info') and task_result.debug_info:
+            debug_data = task_result.debug_info
+            debug_info = DebugInfo(
+                enabled=debug_data.get("enabled", False),
+                parameters_received=debug_data.get("parameters_received"),
+                registered_variables=debug_data.get("registered_variables"),
+                command_results=debug_data.get("command_results"),
+                validation_details=debug_data.get("validation_details"),
+                custom_debug_points=debug_data.get("custom_debug_points")
+            )
+        
         return TestResult(
             test_name=task.task_id,
             status=task_result.status.value,
@@ -83,7 +122,8 @@ class SimpleGradingService:
                 "task_type": task.template_name,
                 "execution_device": task.execution_device
             },
-            raw_output=task_result.stdout
+            raw_output=task_result.stdout,
+            debug_info=debug_info
         )
     
     async def process_grading_job(self, job: GradingJob) -> GradingResult:
@@ -109,9 +149,41 @@ class SimpleGradingService:
             except Exception as e:
                 logger.warning(f"Failed to send progress update: {e}")
         
-        # Add devices to grader
+        # Run device detection for devices without platform info
+        detection_results = {}
+        devices_needing_detection = [d for d in job.devices if not d.platform or d.platform.lower() == 'unknown']
+        if devices_needing_detection:
+            logger.info(f"Running device detection for {len(devices_needing_detection)} devices without platform info")
+            if job.callback_url:
+                try:
+                    progress = ProgressUpdate(
+                        job_id=job.job_id,
+                        status="running",
+                        message="Detecting device types and capabilities",
+                        tests_completed=0,
+                        total_tests=len(job.part.play.ansible_tasks),
+                        percentage=5.0
+                    )
+                    await self.api_client.send_progress_update(job.callback_url, progress)
+                except Exception as e:
+                    logger.warning(f"Failed to send progress update: {e}")
+            
+            # Run device detection
+            detection_results = await self.detect_devices(job)
+            
+            # Update device platforms based on detection results
+            for device in job.devices:
+                if device.id in detection_results:
+                    detection_result = detection_results[device.id]
+                    if detection_result.get('platform') and detection_result['platform'] != 'unknown':
+                        original_platform = device.platform
+                        device.platform = detection_result['platform']
+                        if original_platform != device.platform:
+                            logger.info(f"Updated {device.id} platform: {original_platform} -> {device.platform}")
+        
+        # Add devices to Nornir grader with detection results
         for device in job.devices:
-            simple_device = self._convert_device(device)
+            simple_device = self._convert_device(device, detection_results)
             await self.grader.add_device(simple_device)
         
         # Process tasks
@@ -140,10 +212,10 @@ class SimpleGradingService:
                 except Exception as e:
                     logger.warning(f"Failed to send progress update: {e}")
             
-            # Map template names to plugin names
-            plugin_name = self._map_template_to_plugin(task.template_name)
+            # Map template names to Nornir task types
+            task_type = self._map_template_to_nornir_task(task.template_name)
             
-            # Execute task
+            # Execute task using Nornir
             # Convert task.parameters to dict if it's a model object
             if hasattr(task.parameters, '__dict__'):
                 task_params = task.parameters.__dict__
@@ -157,15 +229,15 @@ class SimpleGradingService:
                 ip_mappings = job.ip_mappings if isinstance(job.ip_mappings, dict) else {}
             
             # Enhance parameters for specific task types
-            enhanced_params = self._enhance_task_parameters(task, {
+            enhanced_params = self._enhance_nornir_task_parameters(task, {
                 **task_params,
                 "points": task.points,
                 # Add IP mappings for parameter resolution
                 **ip_mappings
             })
-            task_result = await self.grader.execute_plugin_task(
+            task_result = await self.grader.execute_task(
                 task_id=task.task_id,
-                plugin_name=plugin_name,
+                task_type=task_type,
                 device_id=task.execution_device,
                 parameters=enhanced_params
             )
@@ -226,26 +298,49 @@ class SimpleGradingService:
         logger.info(f"Grading job completed: {total_points_earned}/{total_points_possible} points ({success_rate:.1f}%)")
         return result
     
-    def _map_template_to_plugin(self, template_name: str) -> str:
-        """Map Ansible template names to simple plugin names"""
+    def _map_template_to_nornir_task(self, template_name: str) -> str:
+        """Map Ansible template names to Nornir task types"""
         mapping = {
             "network_ping": "ping",
             "linux_ip_check": "command",
-            "linux_remote_ssh": "command",
+            "linux_remote_ssh": "ssh_test",  # Use specialized SSH connectivity test
             "network_ip_int": "napalm",
             "service_check": "command",
             "dhcp_check": "command",
             "route_check": "command",
             "network_acls_int": "napalm"
         }
+        
+        # Check if this is a global custom task template (direct task name)
+        if self.global_task_registry.is_global_template(template_name):
+            return "custom"
+        
+        # Legacy support: Check if this is a prefixed custom task
+        if template_name.startswith("custom_"):
+            return "custom"
+        
         return mapping.get(template_name, "ping")  # Default to ping
     
-    def _enhance_task_parameters(self, task: AnsibleTask, parameters: Dict[str, Any]) -> Dict[str, Any]:
-        """Enhance task parameters based on template type"""
+    def _enhance_nornir_task_parameters(self, task: AnsibleTask, parameters: Dict[str, Any]) -> Dict[str, Any]:
+        """Enhance task parameters for Nornir execution"""
         enhanced = parameters.copy()
         
+        # Handle global custom task templates (direct task name)
+        if self.global_task_registry.is_global_template(task.template_name):
+            # For global templates, use the template name directly as task ID
+            enhanced["custom_task_id"] = task.template_name
+            return enhanced
+        
+        # Legacy support: Handle prefixed custom instructor tasks
+        elif task.template_name.startswith("custom_"):
+            # For legacy custom tasks, extract the actual custom task ID from template name
+            # Format: custom_<instructor_id>_<task_name>_<hash>
+            custom_task_id = task.template_name[7:]  # Remove 'custom_' prefix
+            enhanced["custom_task_id"] = custom_task_id
+            return enhanced
+        
         # Configure NAPALM operations for network interface checking
-        if task.template_name == "network_ip_int":
+        elif task.template_name == "network_ip_int":
             # Use NAPALM to get interface information
             enhanced["operation"] = "get_interfaces_ip" if parameters.get("check_ip", False) else "get_interfaces"
             # Keep interface name and expected_ip as they are
@@ -259,11 +354,25 @@ class SimpleGradingService:
         elif task.template_name == "network_acls_int":
             enhanced["operation"] = "get_interfaces"
         
-        # Add default commands for SSH tests
-        elif task.template_name == "linux_remote_ssh":
-            test_command = parameters.get("test_command", "whoami")
-            target_ip = parameters.get("target_ip", "127.0.0.1")
-            enhanced["command"] = f"echo 'SSH test to {target_ip}: {test_command}'"
+        # Configure commands for SSH/command tests
+        # elif task.template_name == "linux_remote_ssh":
+        #     test_command = parameters.get("test_command", "whoami")
+        #     target_ip = parameters.get("target_ip", "127.0.0.1")
+        #     enhanced["command"] = f"{test_command}"
+        
+        elif task.template_name == "linux_ip_check":
+            # Convert to appropriate command
+            enhanced["command"] = parameters.get("command", "ip addr show")
+            
+        elif task.template_name == "service_check":
+            service_name = parameters.get("service_name", "ssh")
+            enhanced["command"] = f"systemctl status {service_name}"
+            
+        elif task.template_name == "dhcp_check":
+            enhanced["command"] = parameters.get("command", "dhclient -v")
+            
+        elif task.template_name == "route_check":
+            enhanced["command"] = parameters.get("command", "ip route show")
         
         return enhanced
     
@@ -284,11 +393,16 @@ class SimpleGradingService:
         if not job.part.play.ansible_tasks:
             errors.append("At least one task is required")
         
-        # Check if plugins exist for all templates
+        # Check if task types are supported
+        supported_templates = ["network_ping", "linux_ip_check", "linux_remote_ssh", 
+                              "network_ip_int", "service_check", "dhcp_check", 
+                              "route_check", "network_acls_int"]
         for task in job.part.play.ansible_tasks:
-            plugin_name = self._map_template_to_plugin(task.template_name)
-            if not self.grader.plugin_manager.get_plugin(plugin_name):
-                errors.append(f"Plugin not available for template: {task.template_name}")
+            # Allow built-in templates, global custom templates, or legacy prefixed custom templates
+            if not (task.template_name in supported_templates or 
+                    self.global_task_registry.is_global_template(task.template_name) or
+                    task.template_name.startswith("custom_")):
+                errors.append(f"Template not supported: {task.template_name}")
         
         return {
             "valid": len(errors) == 0,
@@ -427,6 +541,7 @@ class SimpleGradingService:
         return detection_results
     
     def cleanup_old_files(self):
-        """Clean up old temporary files (simple version)"""
-        logger.info("Cleanup completed (simple version - no files to clean)")
-        pass
+        """Clean up temporary files created by Nornir grading service"""
+        if self.grader:
+            self.grader.cleanup()
+        logger.info("Cleanup completed - Nornir temporary files cleaned")

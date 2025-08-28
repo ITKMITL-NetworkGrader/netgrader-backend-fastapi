@@ -28,5 +28,8 @@ class Config:
     SNMP_TIMEOUT: int = int(os.getenv("SNMP_TIMEOUT", "3"))
     SNMP_RETRIES: int = int(os.getenv("SNMP_RETRIES", "1"))
     SNMP_ENABLED: bool = os.getenv("SNMP_ENABLED", "true").lower() == "true"
+    
+    # Custom Task Configuration
+    CUSTOM_TASK_REGISTRY_DIR: str = os.getenv("CUSTOM_TASK_REGISTRY_DIR", "custom_tasks")
 
 config = Config()

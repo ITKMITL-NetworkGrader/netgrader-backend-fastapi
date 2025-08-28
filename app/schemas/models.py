@@ -64,6 +64,16 @@ class TestCaseResult(BaseModel):
     points_possible: int
     message: str
 
+class DebugInfo(BaseModel):
+    """Debug information for custom task execution"""
+    enabled: bool = False
+    parameters_received: Optional[Dict[str, Any]] = None
+    registered_variables: Optional[Dict[str, Any]] = None
+    command_results: Optional[List[Dict[str, Any]]] = None
+    validation_details: Optional[List[Dict[str, Any]]] = None
+    custom_debug_points: Optional[Dict[str, Any]] = None
+
+
 class TestResult(BaseModel):
     test_name: str
     status: str  # "passed", "failed", "error"
@@ -73,7 +83,8 @@ class TestResult(BaseModel):
     execution_time: float
     test_case_results: List[TestCaseResult] = Field(default_factory=list)
     extracted_data: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Raw data extracted from device")
-    raw_output: Optional[str] = ""  
+    raw_output: Optional[str] = ""
+    debug_info: Optional[DebugInfo] = None  
 
 class GradingResult(BaseModel):
     job_id: str

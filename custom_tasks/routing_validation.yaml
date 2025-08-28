@@ -1,0 +1,70 @@
+# Routing Table Validation - Global Custom Task Template
+# Validates that specific routes exist in routing table with correct metrics
+
+task_name: "routing_validation"
+description: "Validate routing table entries and verify route metrics"
+connection_type: "napalm"
+author: "NetGrader Team"
+version: "1.0.0"
+points: 20
+
+parameters:
+  - name: "target_network"
+    datatype: "string"
+    description: "Target network to check in routing table (CIDR format)"
+    required: true
+    example: "10.0.0.0/8"
+  - name: "expected_next_hop"
+    datatype: "string"
+    description: "Expected next-hop IP address for the route"
+    required: true
+    example: "192.168.1.1"
+
+commands:
+  - name: "get_routing_table"
+    action: "napalm_get"
+    parameters:
+      getter: "get_route_to"
+      destination: "{{target_network}}"
+    register: "routing_data"
+  
+  - name: "backup_netmiko_routes"
+    action: "netmiko_send_command"
+    parameters:
+      command: "show ip route {{target_network}}"
+    register: "route_output"
+  
+  - name: "parse_route_entries"
+    action: "parse_output"
+    parameters:
+      input: "{{route_output}}"
+      pattern: "via (\\d+\\.\\d+\\.\\d+\\.\\d+)"
+    register: "next_hop_ips"
+  
+  - name: "parse_route_metric"
+    action: "parse_output"
+    parameters:
+      input: "{{route_output}}"
+      pattern: "\\[(\\d+)/(\\d+)\\]"
+    register: "route_metrics"
+
+validation:
+  - field: "routing_data"
+    condition: "exists"
+    value: true
+    description: "Routing table data should be retrieved via NAPALM"
+  
+  - field: "next_hop_ips.match_count"
+    condition: "greater_than"
+    value: 0
+    description: "At least one next-hop IP should be found for the target network"
+  
+  - field: "route_metrics.match_count"
+    condition: "greater_than"
+    value: 0
+    description: "Route metrics should be present in routing output"
+  
+  - field: "route_output"
+    condition: "contains"
+    value: "{{expected_next_hop}}"
+    description: "Routing table should contain expected next-hop address"

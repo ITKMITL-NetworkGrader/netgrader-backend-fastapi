@@ -1,0 +1,69 @@
+# VLAN Configuration Verification - Global Custom Task Template
+# Verifies VLAN configuration and interface assignments
+
+task_name: "vlan_verification"
+description: "Verify VLAN configuration and interface VLAN assignments"
+connection_type: "netmiko"
+author: "NetGrader Team"
+version: "1.0.0"
+points: 15
+
+parameters:
+  - name: "interface_name"
+    datatype: "string"
+    description: "Name of the interface to check (e.g., GigabitEthernet0/1)"
+    required: true
+    example: "GigabitEthernet0/1"
+  - name: "expected_vlan_id"
+    datatype: "integer"
+    description: "Expected VLAN ID that should be configured"
+    required: true
+    example: "100"
+
+commands:
+  - name: "show_vlan_brief"
+    action: "netmiko_send_command"
+    parameters:
+      command: "show vlan brief"
+    register: "vlan_output"
+  
+  - name: "check_vlan_interface"
+    action: "netmiko_send_command"
+    parameters:
+      command: "show interface {{interface_name}} switchport"
+    register: "interface_vlan"
+  
+  - name: "parse_vlan_list"
+    action: "parse_output"
+    parameters:
+      input: "{{vlan_output}}"
+      pattern: "^(\\d+)\\s+\\w+"
+    register: "configured_vlans"
+  
+  - name: "parse_access_vlan"
+    action: "parse_output"
+    parameters:
+      input: "{{interface_vlan}}"
+      pattern: "Access Mode VLAN:\\s+(\\d+)"
+    register: "interface_access_vlan"
+
+validation:
+  - field: "configured_vlans.match_count"
+    condition: "greater_than"
+    value: 1
+    description: "At least 2 VLANs should be configured (including default)"
+  
+  - field: "vlan_output"
+    condition: "contains"
+    value: "{{expected_vlan_id}}"
+    description: "Expected VLAN ID should exist in VLAN configuration"
+  
+  - field: "interface_access_vlan.first_match"
+    condition: "equals"
+    value: "{{expected_vlan_id}}"
+    description: "Interface should be assigned to the expected VLAN"
+  
+  - field: "interface_vlan"
+    condition: "contains"
+    value: "Switchport: Enabled"
+    description: "Interface should have switchport functionality enabled"
