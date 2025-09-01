@@ -490,7 +490,6 @@ class CustomTaskExecutor:
         try:
             # Resolve parameters with context variables and task parameters
             resolved_params = self._resolve_parameters(command.parameters, context)
-            
             # Execute based on action type
             if command.action == "napalm_get":
                 result = await self._execute_napalm_command(command, context, resolved_params)
@@ -583,10 +582,9 @@ class CustomTaskExecutor:
         """Execute ping command through Nornir service"""
         ping_params = {
             "target_ip": resolved_params.get("target_ip", ""),
-            "ping_count": resolved_params.get("ping_count", 3),
+            "ping_count": resolved_params.get("ping_count", 3) or 3,
             "points": resolved_params.get("points", context.points_possible)
         }
-        
         nornir_result = await self.nornir_service.execute_ping_task(
             task_id=f"{context.task_id}_{command.name}",
             device_id=context.device_id,
@@ -652,12 +650,10 @@ class CustomTaskExecutor:
             Resolved parameters with substituted values
         """
         resolved = {}
-        
         for key, value in parameters.items():
             if isinstance(value, str):
                 # Simple variable substitution using {{variable}} syntax
                 resolved_value = value
-                
                 # Replace context variables
                 for var_name, var_value in context.variables.items():
                     placeholder = f"{{{{{var_name}}}}}"
@@ -670,6 +666,10 @@ class CustomTaskExecutor:
                     if placeholder in resolved_value:
                         resolved_value = resolved_value.replace(placeholder, str(param_value))
                 
+                # Remove any remaining unresolved placeholders
+                if re.search(r'\{\{[^}]+\}\}', resolved_value):
+                    #if matched, it will not updated resolved value in resolved[key].
+                    continue
                 resolved[key] = resolved_value
             else:
                 resolved[key] = value

@@ -247,7 +247,7 @@ class NornirGradingService:
             else:
                 # Linux ping format  
                 ping_command = f"ping -c {ping_count} {target_ip}"
-            
+
             result = device_nr.run(
                 task=netmiko_send_command,
                 command_string=ping_command,
