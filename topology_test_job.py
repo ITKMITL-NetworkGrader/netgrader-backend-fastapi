@@ -20,50 +20,16 @@ TOPOLOGY_TEST_JOB = {
     "part": {
         "part_id": "part1",
         "title": "VLAN Connectivity and Inter-VLAN Routing Test",
-        "play": {
-            "play_id": "connectivity_tests",
-            "ansible_tasks": [
-                # Test 1: Router can ping Ubuntu1 (VLAN 101)
-                # {
-                #     "task_id": "router_to_ubuntu1",
-                #     "template_name": "network_ping",
-                #     "execution_device": "router",
-                #     "parameters": {
-                #         "target_ip": "192.168.101.2",
-                #         "ping_count": 3
-                #     },
-                #     "test_cases": [
-                #         {
-                #             "comparison_type": "success",
-                #             "expected_result": True
-                #         }
-                #     ],
-                #     "points": 10
-                # },
-                
-                # # Test 2: Router can ping Ubuntu2 (VLAN 102)  
-                # {
-                #     "task_id": "router_to_ubuntu2",
-                #     "template_name": "network_ping",
-                #     "execution_device": "router",
-                #     "parameters": {
-                #         "target_ip": "192.168.102.2",
-                #         "ping_count": 3
-                #     },
-                #     "test_cases": [
-                #         {
-                #             "comparison_type": "success",
-                #             "expected_result": True
-                #         }
-                #     ],
-                #     "points": 10
-                # },
-                
-                # # Test 3: Check router VLAN 101 interface status
+        "ansible_tasks": [
+                # Group 1: Router Interface Configuration (All-or-Nothing)
+                # Test 1: Check router VLAN 101 interface status
                 # {
                 #     "task_id": "check_vlan101_interface",
                 #     "template_name": "network_ip_int",
+                #     "execution_mode": "shared",
                 #     "execution_device": "router",
+                #     "group_id": "router_interfaces",
+                #     "points": 8,
                 #     "parameters": {
                 #         "interface": "GigabitEthernet0/1.101",
                 #         "expected_ip": "192.168.101.1",
@@ -72,18 +38,18 @@ TOPOLOGY_TEST_JOB = {
                 #     "test_cases": [
                 #         {
                 #             "comparison_type": "equals",
-                #             "field": "interface_operational",
                 #             "expected_result": True
                 #         }
-                #     ],
-                #     "points": 10
+                #     ]
                 # },
                 
-                # # Test 4: Check router VLAN 102 interface status
+                # # Test 2: Check router VLAN 102 interface status
                 # {
                 #     "task_id": "check_vlan102_interface", 
                 #     "template_name": "network_ip_int",
+                #     "execution_mode": "shared",
                 #     "execution_device": "router",
+                #     "group_id": "router_interfaces",
                 #     "parameters": {
                 #         "interface": "GigabitEthernet0/1.102",
                 #         "expected_ip": "192.168.102.1",
@@ -95,17 +61,18 @@ TOPOLOGY_TEST_JOB = {
                 #             "field": "interface_operational", 
                 #             "expected_result": True
                 #         }
-                #     ],
-                #     "points": 10
+                #     ]
                 # },
                 
-                # # Test 5: Ubuntu1 can reach its gateway
+                # # Group 2: Basic Connectivity (All-or-Nothing) 
+                # # Test 3: Router can ping Ubuntu1 (VLAN 101)
                 # {
-                #     "task_id": "ubuntu1_to_gateway",
+                #     "task_id": "router_to_ubuntu1",
                 #     "template_name": "network_ping",
-                #     "execution_device": "ubuntu1",
+                #     "execution_device": "router",
+                #     "group_id": "basic_connectivity",
                 #     "parameters": {
-                #         "target_ip": "192.168.101.1",
+                #         "target_ip": "192.168.101.2",
                 #         "ping_count": 3
                 #     },
                 #     "test_cases": [
@@ -113,33 +80,15 @@ TOPOLOGY_TEST_JOB = {
                 #             "comparison_type": "success",
                 #             "expected_result": True
                 #         }
-                #     ],
-                #     "points": 10
+                #     ]
                 # },
                 
-                # # Test 6: Ubuntu2 can reach its gateway
+                # # Test 4: Router can ping Ubuntu2 (VLAN 102)  
                 # {
-                #     "task_id": "ubuntu2_to_gateway",
-                #     "template_name": "network_ping", 
-                #     "execution_device": "ubuntu2",
-                #     "parameters": {
-                #         "target_ip": "192.168.102.1",
-                #         "ping_count": 3
-                #     },
-                #     "test_cases": [
-                #         {
-                #             "comparison_type": "success",
-                #             "expected_result": True
-                #         }
-                #     ],
-                #     "points": 10
-                # },
-                
-                # # Test 7: Inter-VLAN connectivity (Ubuntu1 to Ubuntu2)
-                # {
-                #     "task_id": "inter_vlan_connectivity",
+                #     "task_id": "router_to_ubuntu2",
                 #     "template_name": "network_ping",
-                #     "execution_device": "ubuntu1", 
+                #     "execution_device": "router",
+                #     "group_id": "basic_connectivity",
                 #     "parameters": {
                 #         "target_ip": "192.168.102.2",
                 #         "ping_count": 3
@@ -149,15 +98,72 @@ TOPOLOGY_TEST_JOB = {
                 #             "comparison_type": "success",
                 #             "expected_result": True
                 #         }
-                #     ],
-                #     "points": 15
+                #     ]
+                # },
+                
+                # # Group 3: Gateway Connectivity (Proportional)
+                # # Test 5: Ubuntu1 can reach its gateway
+                # {
+                #     "task_id": "ubuntu1_to_gateway",
+                #     "template_name": "network_ping",
+                #     "execution_device": "ubuntu1",
+                #     "group_id": "gateway_connectivity",
+                #     "parameters": {
+                #         "target_ip": "192.168.101.1",
+                #         "ping_count": 3
+                #     },
+                #     "test_cases": [
+                #         {
+                #             "comparison_type": "success",
+                #             "expected_result": True
+                #         }
+                #     ]
+                # },
+                
+                # # Test 6: Ubuntu2 can reach its gateway
+                # {
+                #     "task_id": "ubuntu2_to_gateway",
+                #     "template_name": "network_ping", 
+                #     "execution_device": "ubuntu2",
+                #     "group_id": "gateway_connectivity",
+                #     "parameters": {
+                #         "target_ip": "192.168.102.1",
+                #         "ping_count": 3
+                #     },
+                #     "test_cases": [
+                #         {
+                #             "comparison_type": "success",
+                #             "expected_result": True
+                #         }
+                #     ]
+                # },
+                
+                # # Group 4: Advanced Services (Proportional) 
+                # # Test 7: Inter-VLAN connectivity (Ubuntu1 to Ubuntu2)
+                # {
+                #     "task_id": "inter_vlan_connectivity",
+                #     "template_name": "network_ping",
+                #     "execution_device": "ubuntu1",
+                #     "group_id": "advanced_services", 
+                #     "parameters": {
+                #         "target_ip": "192.168.102.2",
+                #         "ping_count": 1
+                #     },
+                #     "test_cases": [
+                #         {
+                #             "comparison_type": "success",
+                #             "expected_result": True
+                #         }
+                #     ]
                 # },
                 
                 # # Test 8: SSH connectivity from Ubuntu1 to Ubuntu2
                 # {
                 #     "task_id": "ssh_inter_vlan",
                 #     "template_name": "linux_remote_ssh",
+                #     "execution_mode": "shared",
                 #     "execution_device": "ubuntu1",
+                #     "group_id": "advanced_services",
                 #     "parameters": {
                 #         "target_ip": "192.168.102.2",
                 #         "ssh_user": "ubuntu",  # Adjust if different
@@ -168,11 +174,10 @@ TOPOLOGY_TEST_JOB = {
                 #             "comparison_type": "success",
                 #             "expected_result": True
                 #         }
-                #     ],
-                #     "points": 15
+                #     ]
                 # },
                 
-                # # Test 9: Internet connectivity from Ubuntu1
+                # # Test 9: Internet connectivity from Ubuntu1 (Individual Task)
                 # {
                 #     "task_id": "ubuntu1_internet",
                 #     "template_name": "network_ping",
@@ -189,23 +194,63 @@ TOPOLOGY_TEST_JOB = {
                 #     ],
                 #     "points": 10
                 # },
-            {
-                    "task_id": "Test",
+                
+                # Test 10: Custom debug example (Individual Task)
+                {
+                    "task_id": "debug_test",
                     "template_name": "debug_example",
                     "execution_device": "router",
                     "parameters": {
                         "target_ip": "192.168.102.2",
                         "ping_count": 3
                     },
-                    "test_cases": [
-                        {
-                            "comparison_type": "success",
-                            "expected_result": True
-                        }
-                    ],
+                    # "test_cases": [
+                    #     {
+                    #         "comparison_type": "success",
+                    #         "expected_result": True
+                    #     }
+                    # ],
+                    "points": 7
                 }
-            ]
-        }
+            ],
+        # "groups": [
+        #         {
+        #             "group_id": "router_interfaces",
+        #             "title": "Router Interface Configuration",
+        #             "description": "All router VLAN interfaces must be properly configured and operational",
+        #             "group_type": "proportional",
+        #             "points": 16,
+        #             "continue_on_failure": True,
+        #             "timeout_seconds": 120
+        #         },
+        #         {
+        #             "group_id": "basic_connectivity", 
+        #             "title": "Basic Network Connectivity",
+        #             "description": "Router must be able to reach all devices in both VLANs",
+        #             "group_type": "all_or_nothing", 
+        #             "points": 30,
+        #             "continue_on_failure": True,
+        #             "timeout_seconds": 180
+        #         },
+        #         {
+        #             "group_id": "gateway_connectivity",
+        #             "title": "Gateway Connectivity Test",
+        #             "description": "Devices should be able to reach their default gateways - partial credit allowed",
+        #             "group_type": "proportional",
+        #             "points": 20,
+        #             "continue_on_failure": True,
+        #             "timeout_seconds": 90
+        #         },
+        #         {
+        #             "group_id": "advanced_services",
+        #             "title": "Advanced Network Services", 
+        #             "description": "Inter-VLAN routing and SSH services - partial credit allowed",
+        #             "group_type": "proportional",
+        #             "points": 25,
+        #             "continue_on_failure": True,
+        #             "timeout_seconds": 200
+        #         }
+        #     ]
     },
     "devices": [
         {
@@ -263,7 +308,7 @@ TOPOLOGY_TEST_JOB = {
         "gateway_vlan101": "192.168.101.1",
         "gateway_vlan102": "192.168.102.1"
     },
-    "callback_url": "http://10.50.37.43:4000/v0/grading"  # Set to your callback URL if needed
+    "callback_url": "http://10.50.37.43:4000/v0/submissions"  # Set to your callback URL if needed
 }
 
 async def test_topology():
@@ -336,7 +381,7 @@ async def test_topology():
         return
     
     # Run the actual grading
-    print(f"\n🎯 Running grading test ({len(job.part.play.ansible_tasks)} tasks)...")
+    print(f"\n🎯 Running grading test ({len(job.part.ansible_tasks)} tasks)...")
     try:
         result = await grading_service.process_grading_job(job)
         
@@ -346,12 +391,57 @@ async def test_topology():
         print(f"   Success Rate: {(result.total_points_earned/result.total_points_possible*100):.1f}%")
         print(f"   Execution Time: {result.total_execution_time:.2f}s")
         
+        # Show group results if available
+        if hasattr(result, 'group_results') and result.group_results:
+            print(f"\n📊 TASK GROUP RESULTS:")
+            for group in result.group_results:
+                status_emoji = "✅" if group.status == "passed" else ("🟡" if group.status == "partial" else "❌")
+                print(f"   {status_emoji} {group.title} ({group.group_type})")
+                print(f"      └─ Status: {group.status}")
+                print(f"      └─ Points: {group.points_earned}/{group.points_possible}")
+                print(f"      └─ Tasks: {len(group.task_results)}")
+                print(f"      └─ Message: {group.message}")
+                if hasattr(group, 'rescue_executed') and group.rescue_executed:
+                    print(f"      └─ 🚨 Rescue tasks executed")
+                if hasattr(group, 'cleanup_executed') and group.cleanup_executed:
+                    print(f"      └─ 🧹 Cleanup tasks executed")
+                print()
+        
         print(f"\n📝 Individual Test Results:")
+        # Group tests by group_id for better organization
+        grouped_tests = {}
+        ungrouped_tests = []
+        
         for test in result.test_results:
-            status_emoji = "✅" if test.status == "passed" else ("⚠️" if test.status == "partial" else "❌")
-            print(f"   {status_emoji} {test.test_name}: {test.status} ({test.points_earned}/{test.points_possible} pts)")
-            if test.message:
-                print(f"      └─ {test.message}")
+            if hasattr(test, 'group_id') and test.group_id:
+                if test.group_id not in grouped_tests:
+                    grouped_tests[test.group_id] = []
+                grouped_tests[test.group_id].append(test)
+            else:
+                ungrouped_tests.append(test)
+        
+        # Show grouped tests
+        for group_id, tests in grouped_tests.items():
+            print(f"\n   📂 Group: {group_id}")
+            for test in tests:
+                status_emoji = "✅" if test.status == "passed" else ("⚠️" if test.status == "partial" else "❌")
+                print(f"      {status_emoji} {test.test_name}: {test.status}")
+                if test.message:
+                    print(f"         └─ {test.message}")
+        
+        # Show ungrouped tests
+        if ungrouped_tests:
+            print(f"\n   📋 Individual Tasks:")
+            for test in ungrouped_tests:
+                status_emoji = "✅" if test.status == "passed" else ("⚠️" if test.status == "partial" else "❌")
+                print(f"      {status_emoji} {test.test_name}: {test.status} ({test.points_earned}/{test.points_possible} pts)")
+                if test.message:
+                    print(f"         └─ {test.message}")
+        
+        # Show cancellation info if applicable  
+        if hasattr(result, 'cancelled_reason') and result.cancelled_reason:
+            print(f"\n⚠️  EXECUTION CANCELLED:")
+            print(f"   Reason: {result.cancelled_reason}")
         
     except Exception as e:
         print(f"❌ Grading test failed: {e}")

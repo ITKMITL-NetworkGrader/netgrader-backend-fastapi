@@ -10,7 +10,7 @@ import time
 from datetime import datetime
 from typing import Dict, Any
 # Import existing models and services
-from app.schemas.models import GradingJob, TestResult, GradingResult, Device, AnsibleTask, ProgressUpdate, DebugInfo
+from app.schemas.models import GradingJob, TestResult, GradingResult, Device, AnsibleTask, ProgressUpdate, DebugInfo, TaskGroup, GroupResult
 from app.services.api_client import APIClient as ApiClient
 from app.services.scoring_service import ScoringService
 
@@ -123,7 +123,8 @@ class SimpleGradingService:
                 "execution_device": task.execution_device
             },
             raw_output=task_result.stdout,
-            debug_info=debug_info
+            debug_info=debug_info,
+            group_id=task.group_id
         )
     
     async def process_grading_job(self, job: GradingJob) -> GradingResult:
@@ -142,7 +143,7 @@ class SimpleGradingService:
                     status="started",
                     message="Initializing grading job",
                     tests_completed=0,
-                    total_tests=len(job.part.play.ansible_tasks),
+                    total_tests=len(job.part.ansible_tasks),
                     percentage=0.0
                 )
                 await self.api_client.send_progress_update(job.callback_url, progress)
@@ -161,7 +162,7 @@ class SimpleGradingService:
                         status="running",
                         message="Detecting device types and capabilities",
                         tests_completed=0,
-                        total_tests=len(job.part.play.ansible_tasks),
+                        total_tests=len(job.part.ansible_tasks),
                         percentage=5.0
                     )
                     await self.api_client.send_progress_update(job.callback_url, progress)
@@ -186,83 +187,122 @@ class SimpleGradingService:
             simple_device = self._convert_device(device, detection_results)
             await self.grader.add_device(simple_device)
         
-        # Process tasks
-        tasks = job.part.play.ansible_tasks
+        # Process tasks with group handling
+        tasks = job.part.ansible_tasks
+        groups = job.part.groups
         total_tasks = len(tasks)
+        
+        # Group tasks by group_id
+        grouped_tasks = self.scoring_service.group_tasks_by_id(tasks)
+        ungrouped_tasks = self.scoring_service.get_ungrouped_tasks(tasks)
+        
+        # Create group lookup for easier access
+        group_lookup = {group.group_id: group for group in groups}
+        
+        # Track results
         test_results = []
+        group_results = []
         total_points_possible = 0
         total_points_earned = 0
+        execution_cancelled = False
+        cancellation_reason = None
         
-        for i, task in enumerate(tasks):
-            logger.info(f"Processing task {i+1}/{total_tasks}: {task.task_id}")
+        task_index = 0
+        
+        # Process ungrouped tasks first
+        logger.info(f"Processing {len(ungrouped_tasks)} ungrouped tasks")
+        for task in ungrouped_tasks:
+            if execution_cancelled:
+                break
+                
+            task_index += 1
+            logger.info(f"Processing task {task_index}/{total_tasks}: {task.task_id}")
             
-            # Send progress update
-            progress_value = (i / total_tasks) * 100.0  # Convert to percentage
-            if job.callback_url:
-                try:
-                    progress = ProgressUpdate(
-                        job_id=job.job_id,
-                        status="running",
-                        message=f"Executing task: {task.task_id}",
-                        tests_completed=i,
-                        total_tests=total_tasks,
-                        percentage=progress_value
-                    )
-                    await self.api_client.send_progress_update(job.callback_url, progress)
-                except Exception as e:
-                    logger.warning(f"Failed to send progress update: {e}")
-            
-            # Map template names to Nornir task types
-            task_type = self._map_template_to_nornir_task(task.template_name)
-            
-            # Execute task using Nornir
-            # Convert task.parameters to dict if it's a model object
-            if hasattr(task.parameters, '__dict__'):
-                task_params = task.parameters.__dict__
-            else:
-                task_params = task.parameters if isinstance(task.parameters, dict) else {}
-            
-            # Convert job.ip_mappings to dict if it's a model object
-            if hasattr(job.ip_mappings, '__dict__'):
-                ip_mappings = job.ip_mappings.__dict__
-            else:
-                ip_mappings = job.ip_mappings if isinstance(job.ip_mappings, dict) else {}
-            
-            # Enhance parameters for specific task types
-            enhanced_params = self._enhance_nornir_task_parameters(task, {
-                **task_params,
-                "points": task.points,
-                # Add IP mappings for parameter resolution
-                **ip_mappings
-            })
-            task_result = await self.grader.execute_task(
-                task_id=task.task_id,
-                task_type=task_type,
-                device_id=task.execution_device,
-                parameters=enhanced_params
-            )
-            # Convert to TestResult
-            test_result = self._convert_task_result(task_result, task)
+            # Execute individual task
+            test_result = await self._execute_single_task(task, job, task_index, total_tasks)
             test_results.append(test_result)
             
             total_points_possible += task.points
-            total_points_earned += task_result.points_earned
+            total_points_earned += test_result.points_earned
+        
+        # Process task groups
+        logger.info(f"Processing {len(grouped_tasks)} task groups")
+        for group_id, group_tasks in grouped_tasks.items():
+            if execution_cancelled:
+                break
+                
+            group_config = group_lookup.get(group_id)
+            if not group_config:
+                logger.error(f"Group configuration not found for group_id: {group_id}")
+                continue
             
-            # Log task result
-            status_emoji = "✅" if task_result.status == TaskStatus.PASSED else ("❌" if task_result.status == TaskStatus.FAILED else "⚠️")
-            logger.info(f"{status_emoji} {task.task_id}: {task_result.status.value} ({task_result.points_earned}/{task.points} pts)")
+            logger.info(f"Processing group: {group_config.title} ({len(group_tasks)} tasks)")
+            
+            # Execute all tasks in the group
+            group_task_results = []
+            group_start_time = time.time()
+            
+            for task in group_tasks:
+                if execution_cancelled:
+                    break
+                    
+                task_index += 1
+                logger.info(f"Processing group task {task_index}/{total_tasks}: {task.task_id}")
+                
+                # Execute task (but don't count individual points yet)
+                test_result = await self._execute_single_task(task, job, task_index, total_tasks, group_config.title)
+                group_task_results.append(test_result)
+                test_results.append(test_result)
+            
+            # Evaluate group
+            if not execution_cancelled:
+                group_result = self.scoring_service.evaluate_task_group(group_config, group_task_results)
+                group_results.append(group_result)
+                
+                total_points_possible += group_config.points
+                total_points_earned += group_result.points_earned
+                
+                # Log group result
+                status_emoji = "✅" if group_result.status == "passed" else ("❌" if group_result.status == "failed" else "⚠️")
+                logger.info(f"{status_emoji} Group {group_config.title}: {group_result.status} ({group_result.points_earned}/{group_config.points} pts)")
+                
+                # Check continue_on_failure
+                if group_result.status == "failed" and not group_config.continue_on_failure:
+                    execution_cancelled = True
+                    cancellation_reason = f"Group '{group_config.title}' failed and continue_on_failure=false"
+                    logger.warning(f"Cancelling execution: {cancellation_reason}")
+                    
+                    # Execute rescue tasks if defined
+                    if group_config.rescue_tasks:
+                        logger.info(f"Executing {len(group_config.rescue_tasks)} rescue tasks")
+                        await self._execute_rescue_tasks(group_config.rescue_tasks, job)
+                        group_result.rescue_executed = True
+                    
+                    # Execute cleanup tasks if defined
+                    if group_config.cleanup_tasks:
+                        logger.info(f"Executing {len(group_config.cleanup_tasks)} cleanup tasks")
+                        await self._execute_cleanup_tasks(group_config.cleanup_tasks, job)
+                        group_result.cleanup_executed = True
+                else:
+                    # Execute cleanup tasks for successful groups too (if defined)
+                    if group_config.cleanup_tasks:
+                        logger.info(f"Executing {len(group_config.cleanup_tasks)} cleanup tasks")
+                        await self._execute_cleanup_tasks(group_config.cleanup_tasks, job)
+                        group_result.cleanup_executed = True
         
         # Calculate final results
         total_execution_time = time.time() - start_time
         success_rate = (total_points_earned / total_points_possible * 100) if total_points_possible > 0 else 0
         
         # Determine overall status
-        if total_points_earned == total_points_possible:
-            status = "completed_success"
+        if execution_cancelled:
+            status = "cancelled"
+        elif total_points_earned == total_points_possible:
+            status = "completed"
         elif total_points_earned > 0:
-            status = "completed_partial"
+            status = "completed"
         else:
-            status = "completed_failure"
+            status = "completed"
         
         # Create grading result
         result = GradingResult(
@@ -272,8 +312,10 @@ class SimpleGradingService:
             total_points_earned=total_points_earned,
             total_execution_time=total_execution_time,
             test_results=test_results,
+            group_results=group_results,
             created_at=datetime.now().isoformat(),
-            completed_at=datetime.now().isoformat()
+            completed_at=datetime.now().isoformat(),
+            cancelled_reason=cancellation_reason
         )
         
         # Send final result
@@ -376,6 +418,154 @@ class SimpleGradingService:
         
         return enhanced
     
+    async def _execute_single_task(self, task: AnsibleTask, job: GradingJob, task_index: int, total_tasks: int, group_name: str = None) -> TestResult:
+        """Execute a single task and return TestResult"""
+        
+        # Send progress update
+        progress_value = (task_index / total_tasks) * 100.0
+        if job.callback_url:
+            try:
+                message = f"Executing task: {task.task_id}"
+                if group_name:
+                    message += f" (Group: {group_name})"
+                    
+                progress = ProgressUpdate(
+                    job_id=job.job_id,
+                    status="running",
+                    message=message,
+                    tests_completed=task_index,
+                    total_tests=total_tasks,
+                    percentage=progress_value
+                )
+                await self.api_client.send_progress_update(job.callback_url, progress)
+            except Exception as e:
+                logger.warning(f"Failed to send progress update: {e}")
+        
+        # Map template names to Nornir task types
+        task_type = self._map_template_to_nornir_task(task.template_name)
+        
+        # Execute task using Nornir
+        # Convert task.parameters to dict if it's a model object
+        if hasattr(task.parameters, '__dict__'):
+            task_params = task.parameters.__dict__
+        else:
+            task_params = task.parameters if isinstance(task.parameters, dict) else {}
+        
+        # Convert job.ip_mappings to dict if it's a model object
+        if hasattr(job.ip_mappings, '__dict__'):
+            ip_mappings = job.ip_mappings.__dict__
+        else:
+            ip_mappings = job.ip_mappings if isinstance(job.ip_mappings, dict) else {}
+        
+        # Enhance parameters for specific task types
+        enhanced_params = self._enhance_nornir_task_parameters(task, {
+            **task_params,
+            "points": task.points,
+            # Add IP mappings for parameter resolution
+            **ip_mappings
+        })
+        
+        # Add execution mode parameters from task
+        enhanced_params.update({
+            "execution_mode": task.execution_mode,
+            "stateful_session_id": task.stateful_session_id,
+            "connection_timeout": task.connection_timeout
+        })
+        
+        task_result = await self.grader.execute_task(
+            task_id=task.task_id,
+            task_type=task_type,
+            device_id=task.execution_device,
+            parameters=enhanced_params
+        )
+        
+        # Convert to TestResult
+        test_result = self._convert_task_result(task_result, task)
+        
+        # Log task result
+        from .network_grader import TaskStatus
+        status_emoji = "✅" if task_result.status == TaskStatus.PASSED else ("❌" if task_result.status == TaskStatus.FAILED else "⚠️")
+        group_suffix = f" (Group: {group_name})" if group_name else ""
+        logger.info(f"{status_emoji} {task.task_id}: {task_result.status.value} ({task_result.points_earned}/{task.points} pts){group_suffix}")
+        
+        return test_result
+    
+    async def _execute_rescue_tasks(self, rescue_tasks: list, job: GradingJob):
+        """Execute rescue tasks when a group fails"""
+        logger.info("Executing rescue tasks...")
+        
+        for rescue_task in rescue_tasks:
+            try:
+                logger.info(f"Executing rescue task: {rescue_task.task_id}")
+                
+                # Execute rescue task (similar to regular task but don't affect scoring)
+                task_type = self._map_template_to_nornir_task(rescue_task.template_name)
+                
+                if hasattr(rescue_task.parameters, '__dict__'):
+                    task_params = rescue_task.parameters.__dict__
+                else:
+                    task_params = rescue_task.parameters if isinstance(rescue_task.parameters, dict) else {}
+                
+                if hasattr(job.ip_mappings, '__dict__'):
+                    ip_mappings = job.ip_mappings.__dict__
+                else:
+                    ip_mappings = job.ip_mappings if isinstance(job.ip_mappings, dict) else {}
+                
+                enhanced_params = self._enhance_nornir_task_parameters(rescue_task, {
+                    **task_params,
+                    **ip_mappings
+                })
+                
+                task_result = await self.grader.execute_task(
+                    task_id=rescue_task.task_id,
+                    task_type=task_type,
+                    device_id=rescue_task.execution_device,
+                    parameters=enhanced_params
+                )
+                
+                logger.info(f"Rescue task {rescue_task.task_id} completed with status: {task_result.status.value}")
+                
+            except Exception as e:
+                logger.error(f"Rescue task {rescue_task.task_id} failed: {e}")
+    
+    async def _execute_cleanup_tasks(self, cleanup_tasks: list, job: GradingJob):
+        """Execute cleanup tasks (similar to rescue but always runs)"""
+        logger.info("Executing cleanup tasks...")
+        
+        for cleanup_task in cleanup_tasks:
+            try:
+                logger.info(f"Executing cleanup task: {cleanup_task.task_id}")
+                
+                # Execute cleanup task (similar to regular task but don't affect scoring)
+                task_type = self._map_template_to_nornir_task(cleanup_task.template_name)
+                
+                if hasattr(cleanup_task.parameters, '__dict__'):
+                    task_params = cleanup_task.parameters.__dict__
+                else:
+                    task_params = cleanup_task.parameters if isinstance(cleanup_task.parameters, dict) else {}
+                
+                if hasattr(job.ip_mappings, '__dict__'):
+                    ip_mappings = job.ip_mappings.__dict__
+                else:
+                    ip_mappings = job.ip_mappings if isinstance(job.ip_mappings, dict) else {}
+                
+                enhanced_params = self._enhance_nornir_task_parameters(cleanup_task, {
+                    **task_params,
+                    **ip_mappings
+                })
+                
+                task_result = await self.grader.execute_task(
+                    task_id=cleanup_task.task_id,
+                    task_type=task_type,
+                    device_id=cleanup_task.execution_device,
+                    parameters=enhanced_params
+                )
+                
+                logger.info(f"Cleanup task {cleanup_task.task_id} completed with status: {task_result.status.value}")
+                
+            except Exception as e:
+                logger.error(f"Cleanup task {cleanup_task.task_id} failed: {e}")
+    
     async def validate_job_payload(self, job: GradingJob) -> Dict[str, Any]:
         """Validate a job payload"""
         errors = []
@@ -390,19 +580,42 @@ class SimpleGradingService:
         if not job.devices:
             errors.append("At least one device is required")
         
-        if not job.part.play.ansible_tasks:
+        if not job.part.ansible_tasks:
             errors.append("At least one task is required")
         
         # Check if task types are supported
         supported_templates = ["network_ping", "linux_ip_check", "linux_remote_ssh", 
                               "network_ip_int", "service_check", "dhcp_check", 
                               "route_check", "network_acls_int"]
-        for task in job.part.play.ansible_tasks:
+        for task in job.part.ansible_tasks:
             # Allow built-in templates, global custom templates, or legacy prefixed custom templates
             if not (task.template_name in supported_templates or 
                     self.global_task_registry.is_global_template(task.template_name) or
                     task.template_name.startswith("custom_")):
                 errors.append(f"Template not supported: {task.template_name}")
+        
+        # Validate task groups
+        if job.part.groups:
+            group_ids = {group.group_id for group in job.part.groups}
+            task_group_ids = {task.group_id for task in job.part.ansible_tasks if task.group_id}
+            
+            # Check for tasks referencing non-existent groups
+            invalid_group_refs = task_group_ids - group_ids
+            if invalid_group_refs:
+                errors.append(f"Tasks reference undefined groups: {', '.join(invalid_group_refs)}")
+            
+            # Check for empty groups (groups with no tasks)
+            empty_groups = group_ids - task_group_ids
+            if empty_groups:
+                errors.append(f"Groups have no tasks assigned: {', '.join(empty_groups)}")
+            
+            # Validate group types
+            for group in job.part.groups:
+                if group.group_type not in ["all_or_nothing", "proportional"]:
+                    errors.append(f"Invalid group_type '{group.group_type}' for group {group.group_id}")
+                
+                if group.points <= 0:
+                    errors.append(f"Group {group.group_id} must have positive points")
         
         return {
             "valid": len(errors) == 0,
@@ -540,8 +753,8 @@ class SimpleGradingService:
         logger.info(f"Device detection completed: {snmp_count} via SNMP, {static_count} via static detection")
         return detection_results
     
-    def cleanup_old_files(self):
+    async def cleanup_old_files(self):
         """Clean up temporary files created by Nornir grading service"""
         if self.grader:
-            self.grader.cleanup()
+            await self.grader.cleanup()
         logger.info("Cleanup completed - Nornir temporary files cleaned")

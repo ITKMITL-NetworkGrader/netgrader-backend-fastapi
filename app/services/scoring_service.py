@@ -6,7 +6,7 @@ import re
 import json
 import logging
 from typing import Any, Dict, List, Union
-from app.schemas.models import TestCase, TestCaseResult, AnsibleTask
+from app.schemas.models import TestCase, TestCaseResult, AnsibleTask, TaskGroup, TestResult, GroupResult
 
 logger = logging.getLogger(__name__)
 
@@ -250,3 +250,141 @@ class ScoringService:
         summary = f"Passed {passed_cases}/{total_cases} test cases ({final_points}/{total_points} points)"
         
         return final_points, summary
+    
+    def evaluate_task_group(self, group: TaskGroup, task_results: List[TestResult]) -> GroupResult:
+        """
+        Evaluate a task group using all-or-nothing or proportional scoring
+        
+        Args:
+            group: The task group configuration
+            task_results: Results from all tasks in the group
+            
+        Returns:
+            GroupResult with group-level scoring
+        """
+        if not task_results:
+            return GroupResult(
+                group_id=group.group_id,
+                title=group.title,
+                status="error",
+                group_type=group.group_type,
+                points_earned=0,
+                points_possible=group.points,
+                execution_time=0.0,
+                task_results=[],
+                message="No task results provided for group"
+            )
+        
+        total_execution_time = sum(result.execution_time for result in task_results)
+        
+        if group.group_type == "all_or_nothing":
+            return self._evaluate_all_or_nothing_group(group, task_results, total_execution_time)
+        elif group.group_type == "proportional":
+            return self._evaluate_proportional_group(group, task_results, total_execution_time)
+        else:
+            logger.error(f"Unknown group_type: {group.group_type}")
+            return GroupResult(
+                group_id=group.group_id,
+                title=group.title,
+                status="error",
+                group_type=group.group_type,
+                points_earned=0,
+                points_possible=group.points,
+                execution_time=total_execution_time,
+                task_results=task_results,
+                message=f"Unknown group type: {group.group_type}"
+            )
+    
+    def _evaluate_all_or_nothing_group(self, group: TaskGroup, task_results: List[TestResult], 
+                                     total_execution_time: float) -> GroupResult:
+        """Evaluate group with all-or-nothing scoring"""
+        
+        # Check if all tasks passed
+        all_passed = all(result.status == "passed" for result in task_results)
+        failed_tasks = [result for result in task_results if result.status != "passed"]
+        
+        if all_passed:
+            points_earned = group.points
+            status = "passed"
+            message = f"Group passed: all {len(task_results)} tasks succeeded"
+        else:
+            points_earned = 0
+            status = "failed"
+            failed_count = len(failed_tasks)
+            failed_names = [result.test_name for result in failed_tasks]
+            message = f"Group failed: {failed_count}/{len(task_results)} tasks failed ({', '.join(failed_names)})"
+        
+        return GroupResult(
+            group_id=group.group_id,
+            title=group.title,
+            status=status,
+            group_type=group.group_type,
+            points_earned=points_earned,
+            points_possible=group.points,
+            execution_time=total_execution_time,
+            task_results=task_results,
+            message=message
+        )
+    
+    def _evaluate_proportional_group(self, group: TaskGroup, task_results: List[TestResult], 
+                                   total_execution_time: float) -> GroupResult:
+        """Evaluate group with proportional scoring"""
+        
+        passed_tasks = [result for result in task_results if result.status == "passed"]
+        passed_count = len(passed_tasks)
+        total_count = len(task_results)
+        
+        if total_count > 0:
+            score_ratio = passed_count / total_count
+            points_earned = int(group.points * score_ratio)
+        else:
+            score_ratio = 0
+            points_earned = 0
+        
+        # Determine status
+        if passed_count == total_count:
+            status = "passed"
+            message = f"Group fully passed: {passed_count}/{total_count} tasks succeeded"
+        elif passed_count > 0:
+            status = "partial"
+            message = f"Group partially passed: {passed_count}/{total_count} tasks succeeded ({points_earned}/{group.points} points)"
+        else:
+            status = "failed" 
+            message = f"Group failed: 0/{total_count} tasks succeeded"
+        
+        return GroupResult(
+            group_id=group.group_id,
+            title=group.title,
+            status=status,
+            group_type=group.group_type,
+            points_earned=points_earned,
+            points_possible=group.points,
+            execution_time=total_execution_time,
+            task_results=task_results,
+            message=message
+        )
+    
+    def group_tasks_by_id(self, tasks: List[AnsibleTask]) -> Dict[str, List[AnsibleTask]]:
+        """
+        Group tasks by their group_id
+        
+        Returns:
+            Dictionary with group_id as key and list of tasks as value
+            Tasks without group_id are not included
+        """
+        grouped_tasks = {}
+        
+        for task in tasks:
+            if task.group_id:
+                grouped_tasks.setdefault(task.group_id, []).append(task)
+
+        return grouped_tasks
+    
+    def get_ungrouped_tasks(self, tasks: List[AnsibleTask]) -> List[AnsibleTask]:
+        """
+        Get tasks that don't belong to any group
+        
+        Returns:
+            List of tasks without group_id
+        """
+        return [task for task in tasks if not task.group_id]

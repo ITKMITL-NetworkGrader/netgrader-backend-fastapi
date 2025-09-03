@@ -2,6 +2,11 @@ from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Optional
 from enum import Enum
 
+class ExecutionMode(str, Enum):
+    ISOLATED = "isolated"     # Fresh connection for each task (default)
+    STATEFUL = "stateful"     # Persistent connection across tasks in sequence
+    SHARED = "shared"         # Shared connection pool for device
+
 class ConnectionType(str, Enum):
     NETWORK_CLI = "ansible.netcommon.network_cli"
     SSH = "ssh"
@@ -34,15 +39,28 @@ class AnsibleTask(BaseModel):
     parameters: Dict[str, Any] = Field(default_factory=dict)
     test_cases: List[TestCase] = Field(default_factory=list)
     points: int = Field(default=1)
+    group_id: Optional[str] = Field(None, description="Optional group ID for task grouping")
+    execution_mode: ExecutionMode = Field(ExecutionMode.ISOLATED, description="Connection execution mode")
+    stateful_session_id: Optional[str] = Field(None, description="Session ID for stateful connections")
+    connection_timeout: Optional[int] = Field(30, description="Connection timeout in seconds")
 
-class Play(BaseModel):
-    play_id: str
-    ansible_tasks: List[AnsibleTask]
+class TaskGroup(BaseModel):
+    """Task group configuration for all-or-nothing or proportional scoring"""
+    group_id: str
+    title: str
+    description: Optional[str] = None
+    group_type: str = Field("all_or_nothing", description="'all_or_nothing' or 'proportional'")
+    points: int = Field(..., description="Total points for the entire group")
+    rescue_tasks: List[AnsibleTask] = Field(default_factory=list, description="Tasks to run when group fails")
+    cleanup_tasks: List[AnsibleTask] = Field(default_factory=list, description="Tasks to always run after group")
+    continue_on_failure: bool = Field(True, description="Whether to continue execution if group fails")
+    timeout_seconds: Optional[int] = Field(None, description="Group execution timeout in seconds")
 
 class Part(BaseModel):
     part_id: str
     title: str
-    play: Play
+    ansible_tasks: List[AnsibleTask]
+    groups: List[TaskGroup] = Field(default_factory=list, description="Task group configurations")
 
 class GradingJob(BaseModel):
     job_id: str
@@ -84,18 +102,35 @@ class TestResult(BaseModel):
     test_case_results: List[TestCaseResult] = Field(default_factory=list)
     extracted_data: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Raw data extracted from device")
     raw_output: Optional[str] = ""
-    debug_info: Optional[DebugInfo] = None  
+    debug_info: Optional[DebugInfo] = None
+    group_id: Optional[str] = Field(None, description="Group ID if task belongs to a group")
+
+class GroupResult(BaseModel):
+    """Result of task group evaluation"""
+    group_id: str
+    title: str
+    status: str  # "passed", "failed", "cancelled"
+    group_type: str
+    points_earned: int
+    points_possible: int
+    execution_time: float
+    task_results: List[TestResult]
+    message: str
+    rescue_executed: bool = Field(False, description="Whether rescue tasks were executed")
+    cleanup_executed: bool = Field(False, description="Whether cleanup tasks were executed")  
 
 class GradingResult(BaseModel):
     job_id: str
-    status: str  # "running", "completed", "failed"
+    status: str  # "running", "completed", "failed", "cancelled"
     total_points_earned: int
     total_points_possible: int
     test_results: List[TestResult]
+    group_results: List[GroupResult] = Field(default_factory=list, description="Results for task groups")
     total_execution_time: float
     error_message: Optional[str] = ""
     created_at: str
     completed_at: Optional[str] = ""
+    cancelled_reason: Optional[str] = Field(None, description="Reason for early cancellation")
 
 class ProgressUpdate(BaseModel):
     job_id: str
