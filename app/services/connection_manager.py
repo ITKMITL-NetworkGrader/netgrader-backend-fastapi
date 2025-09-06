@@ -108,13 +108,16 @@ class ConnectionManager:
                 platform = "linux"
             else:
                 platform = "generic"
-                
+            
             host_config = {
                 'hostname': device.ip_address,
                 'username': device.username,
                 'password': device.password,
                 'platform': platform,
-                'groups': []
+                'groups': [],
+                'data': {
+                    'is_localhost': device.ip_address in ["localhost", "127.0.0.1"] or device.ip_address.startswith("127.")
+                }
             }
             
             # Add to appropriate groups

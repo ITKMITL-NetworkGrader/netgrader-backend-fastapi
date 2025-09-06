@@ -278,7 +278,7 @@ class CustomTaskExecutor:
                 variables={},
                 execution_results=[],
                 start_time=start_time,
-                points_possible=task_definition.points
+                points_possible=parameters.get("points", task_definition.points)
             )
             
             # Execute each command in sequence
@@ -328,16 +328,19 @@ class CustomTaskExecutor:
             total_validations = len(validation_results)
             passed_validations = sum(1 for v in validation_results if v["passed"])
             
+            # Use job JSON points if provided, otherwise fall back to template points
+            total_points = parameters.get("points", task_definition.points)
+            
             if total_validations == 0:
                 # If no validations, consider success based on command execution
                 success_rate = sum(1 for c in command_results if c.get("success", False)) / len(command_results)
                 overall_success = success_rate > 0.5  # At least half commands succeeded
-                points_earned = int(task_definition.points * success_rate)
+                points_earned = int(total_points * success_rate)
             else:
                 # Base success on validation results
                 success_rate = passed_validations / total_validations
                 overall_success = success_rate == 1.0  # All validations must pass
-                points_earned = int(task_definition.points * success_rate)
+                points_earned = int(total_points * success_rate)
             
             # Prepare output strings with debug information
             stdout_lines = [f"Custom Task: {task_definition.task_name}"]
@@ -447,7 +450,7 @@ class CustomTaskExecutor:
                 task_id=task_id,
                 status=TaskStatus.PASSED if overall_success else TaskStatus.FAILED,
                 points_earned=points_earned,
-                points_possible=task_definition.points,
+                points_possible=parameters.get("points", task_definition.points),
                 execution_time=execution_time,
                 command_results=command_results,
                 validation_results=validation_results,
@@ -460,11 +463,14 @@ class CustomTaskExecutor:
             execution_time = time.time() - start_time
             logger.error(f"Custom task execution failed: {e}")
             
+            # Use job JSON points if provided, otherwise use default 10 points
+            error_points = parameters.get("points", 10)
+            
             return CustomTaskExecutionResult(
                 task_id=task_id,
                 status=TaskStatus.ERROR,
                 points_earned=0,
-                points_possible=10,  # Default points
+                points_possible=error_points,
                 execution_time=execution_time,
                 command_results=[],
                 validation_results=[],
@@ -530,7 +536,7 @@ class CustomTaskExecutor:
         """Execute NAPALM command through Nornir service"""
         napalm_params = {
             "operation": resolved_params.get("getter", "get_interfaces"),
-            "points": resolved_params.get("points", context.points_possible)
+            "points": context.points_possible  # Use context points which already has the override logic
         }
         
         # Add any additional parameters
@@ -561,7 +567,7 @@ class CustomTaskExecutor:
         """Execute Netmiko command through Nornir service"""
         netmiko_params = {
             "command": resolved_params.get("command", ""),
-            "points": resolved_params.get("points", context.points_possible)
+            "points": context.points_possible  # Use context points which already has the override logic
         }
         
         nornir_result = await self.nornir_service.execute_command_task(
@@ -583,7 +589,7 @@ class CustomTaskExecutor:
         ping_params = {
             "target_ip": resolved_params.get("target_ip", ""),
             "ping_count": resolved_params.get("ping_count", 3) or 3,
-            "points": resolved_params.get("points", context.points_possible)
+            "points": context.points_possible  # Use context points which already has the override logic
         }
         nornir_result = await self.nornir_service.execute_ping_task(
             task_id=f"{context.task_id}_{command.name}",
