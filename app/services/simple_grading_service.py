@@ -10,7 +10,7 @@ import time
 from datetime import datetime
 from typing import Dict, Any
 # Import existing models and services
-from app.schemas.models import GradingJob, TestResult, GradingResult, Device, AnsibleTask, ProgressUpdate, DebugInfo, TaskGroup, GroupResult
+from app.schemas.models import GradingJob, TestResult, GradingResult, Device, NetworkTask, ProgressUpdate, DebugInfo, TaskGroup, GroupResult
 from app.services.api_client import APIClient as ApiClient
 from app.services.scoring_service import ScoringService
 
@@ -88,12 +88,12 @@ class SimpleGradingService:
         return SimpleDevice(
             id=device.id,
             ip_address=device.ip_address,
-            username=device.credentials.get("ansible_user", "admin"),
-            password=device.credentials.get("ansible_password", ""),
+            username=device.credentials.get("username", "admin"),
+            password=device.credentials.get("password", ""),
             device_type=device_type
         )
     
-    def _convert_task_result(self, task_result: TaskResult, task: AnsibleTask) -> TestResult:
+    def _convert_task_result(self, task_result: TaskResult, task: NetworkTask) -> TestResult:
         """Convert TaskResult to FastAPI TestResult model"""
         # Check if task_result has debug_info attribute (for custom tasks)
         debug_info = None
@@ -143,7 +143,7 @@ class SimpleGradingService:
                     status="started",
                     message="Initializing grading job",
                     tests_completed=0,
-                    total_tests=len(job.part.ansible_tasks),
+                    total_tests=len(job.part.network_tasks),
                     percentage=0.0
                 )
                 await self.api_client.send_progress_update(job.callback_url, progress)
@@ -162,7 +162,7 @@ class SimpleGradingService:
                         status="running",
                         message="Detecting device types and capabilities",
                         tests_completed=0,
-                        total_tests=len(job.part.ansible_tasks),
+                        total_tests=len(job.part.network_tasks),
                         percentage=5.0
                     )
                     await self.api_client.send_progress_update(job.callback_url, progress)
@@ -188,7 +188,7 @@ class SimpleGradingService:
             await self.grader.add_device(simple_device)
         
         # Process tasks with group handling
-        tasks = job.part.ansible_tasks
+        tasks = job.part.network_tasks
         groups = job.part.groups
         total_tasks = len(tasks)
         
@@ -341,7 +341,7 @@ class SimpleGradingService:
         return result
     
     def _map_template_to_nornir_task(self, template_name: str) -> str:
-        """Map Ansible template names to Nornir task types"""
+        """Map template names to Nornir task types"""
         mapping = {
             "network_ping": "ping",
             "linux_ip_check": "command",
@@ -363,7 +363,7 @@ class SimpleGradingService:
         
         return mapping.get(template_name, "ping")  # Default to ping
     
-    def _enhance_nornir_task_parameters(self, task: AnsibleTask, parameters: Dict[str, Any]) -> Dict[str, Any]:
+    def _enhance_nornir_task_parameters(self, task: NetworkTask, parameters: Dict[str, Any]) -> Dict[str, Any]:
         """Enhance task parameters for Nornir execution"""
         enhanced = parameters.copy()
         
@@ -418,7 +418,7 @@ class SimpleGradingService:
         
         return enhanced
     
-    async def _execute_single_task(self, task: AnsibleTask, job: GradingJob, task_index: int, total_tasks: int, group_name: str = None) -> TestResult:
+    async def _execute_single_task(self, task: NetworkTask, job: GradingJob, task_index: int, total_tasks: int, group_name: str = None) -> TestResult:
         """Execute a single task and return TestResult"""
         
         # Send progress update
@@ -580,14 +580,14 @@ class SimpleGradingService:
         if not job.devices:
             errors.append("At least one device is required")
         
-        if not job.part.ansible_tasks:
+        if not job.part.network_tasks:
             errors.append("At least one task is required")
         
         # Check if task types are supported
         supported_templates = ["network_ping", "linux_ip_check", "linux_remote_ssh", 
                               "network_ip_int", "service_check", "dhcp_check", 
                               "route_check", "network_acls_int"]
-        for task in job.part.ansible_tasks:
+        for task in job.part.network_tasks:
             # Allow built-in templates, global custom templates, or legacy prefixed custom templates
             if not (task.template_name in supported_templates or 
                     self.global_task_registry.is_global_template(task.template_name) or
@@ -597,7 +597,7 @@ class SimpleGradingService:
         # Validate task groups
         if job.part.groups:
             group_ids = {group.group_id for group in job.part.groups}
-            task_group_ids = {task.group_id for task in job.part.ansible_tasks if task.group_id}
+            task_group_ids = {task.group_id for task in job.part.network_tasks if task.group_id}
             
             # Check for tasks referencing non-existent groups
             invalid_group_refs = task_group_ids - group_ids

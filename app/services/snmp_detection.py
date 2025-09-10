@@ -373,8 +373,8 @@ class SNMPDetector:
         if device_context and 'credentials' in device_context:
             # Use credentials from device context
             creds = device_context['credentials']
-            username = creds.get('ansible_user')
-            password = creds.get('ansible_password')
+            username = creds.get('username')
+            password = creds.get('password')
             if username and password:
                 credentials.append((username, password))
         

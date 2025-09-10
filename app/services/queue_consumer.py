@@ -110,7 +110,7 @@ class QueueConsumer:
                 logger.info(f"📥 Received grading job from queue: {job.job_id}")
                 logger.info(f"👨‍🎓 Student: {job.student_id} | 📚 Lab: {job.lab_id}")
                 logger.info(f"🧩 Part: {job.part.title}")
-                total_tasks = len(job.part.ansible_tasks)
+                total_tasks = len(job.part.network_tasks)
                 logger.info(f"🧪 Total tasks to run: {total_tasks}")
                 
                 # Process the grading job (triggers dynamic playbook generation and execution)

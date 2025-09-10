@@ -1,4 +1,6 @@
 import os
+from dotenv import load_dotenv
+load_dotenv()
 
 class Config:
     # RabbitMQ Configuration
@@ -33,3 +35,4 @@ class Config:
     CUSTOM_TASK_REGISTRY_DIR: str = os.getenv("CUSTOM_TASK_REGISTRY_DIR", "custom_tasks")
 
 config = Config()
+print(config.RABBITMQ_URL)

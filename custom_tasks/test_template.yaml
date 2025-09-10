@@ -1,0 +1,34 @@
+# Debug Example Template - Shows how to use debug features
+# This template demonstrates debugging capabilities for instructors
+
+task_name: "test_template"
+description: "Example template showing debug features for instructors"
+connection_type: "netmiko"
+author: "NetGrader Team"
+version: "1.0.0"
+points: 5
+
+parameters:
+  - name: "command"
+    datatype: "string"
+    description: "Command to execute on the target device"
+    required: true
+    example: "ping 192.168.1.1"
+
+# Debug configuration - instructors can enable what they want to see
+debug:
+  show_command_results: false          # Show output from each command
+  show_registered_variables: false     # Show all variables stored with 'register'
+  show_validation_details: false       # Show detailed validation results
+  show_parameter_substitution: false   # Show parameter values received
+  custom_debug_points:                # Specific variables to track
+    # - "ping_result"
+    # - "success_rate"
+    - "result"
+
+commands:
+  - name: "send_command"
+    action: "netmiko_send_command"
+    parameters:
+      command: "{{command}}"
+    register: "result"

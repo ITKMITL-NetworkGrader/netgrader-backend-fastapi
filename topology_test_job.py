@@ -14,302 +14,72 @@ from app.schemas.models import GradingJob
 
 # Test job matching your exact topology
 TOPOLOGY_TEST_JOB = {
-    "job_id": "topology-test-001",
-    "student_id": "test_student",
-    "lab_id": "vlan_connectivity_lab",
+    "job_id": "687a2ff20c100d16f99e585c-68bfe68eb5fdda6553c25f72-basic-config-1757479009600",
+    "student_id": "687a2ff20c100d16f99e585c",
+    "lab_id": "68bfe68eb5fdda6553c25f72",
     "part": {
-        "part_id": "part1",
-        "title": "VLAN Connectivity and Inter-VLAN Routing Test",
-        "ansible_tasks": [
-                # Group 1: Router Interface Configuration (All-or-Nothing)
-                # Test 1: Check router VLAN 101 interface status
-                # {
-                #     "task_id": "check_vlan101_interface",
-                #     "template_name": "network_ip_int",
-                #     "execution_mode": "shared",
-                #     "execution_device": "router",
-                #     "group_id": "router_interfaces",
-                #     "points": 8,
-                #     "parameters": {
-                #         "interface": "GigabitEthernet0/1.101",
-                #         "expected_ip": "192.168.101.1",
-                #         "check_ip": True
-                #     },
-                #     "test_cases": [
-                #         {
-                #             "comparison_type": "equals",
-                #             "expected_result": True
-                #         }
-                #     ]
-                # },
-                
-                # # Test 2: Check router VLAN 102 interface status
-                # {
-                #     "task_id": "check_vlan102_interface", 
-                #     "template_name": "network_ip_int",
-                #     "execution_mode": "shared",
-                #     "execution_device": "router",
-                #     "group_id": "router_interfaces",
-                #     "parameters": {
-                #         "interface": "GigabitEthernet0/1.102",
-                #         "expected_ip": "192.168.102.1",
-                #         "check_ip": True
-                #     },
-                #     "test_cases": [
-                #         {
-                #             "comparison_type": "equals",
-                #             "field": "interface_operational", 
-                #             "expected_result": True
-                #         }
-                #     ]
-                # },
-                
-                # # Group 2: Basic Connectivity (All-or-Nothing) 
-                # # Test 3: Router can ping Ubuntu1 (VLAN 101)
-                # {
-                #     "task_id": "router_to_ubuntu1",
-                #     "template_name": "network_ping",
-                #     "execution_device": "router",
-                #     "group_id": "basic_connectivity",
-                #     "parameters": {
-                #         "target_ip": "192.168.101.2",
-                #         "ping_count": 3
-                #     },
-                #     "test_cases": [
-                #         {
-                #             "comparison_type": "success",
-                #             "expected_result": True
-                #         }
-                #     ]
-                # },
-                
-                # # Test 4: Router can ping Ubuntu2 (VLAN 102)  
-                # {
-                #     "task_id": "router_to_ubuntu2",
-                #     "template_name": "network_ping",
-                #     "execution_device": "router",
-                #     "group_id": "basic_connectivity",
-                #     "parameters": {
-                #         "target_ip": "192.168.102.2",
-                #         "ping_count": 3
-                #     },
-                #     "test_cases": [
-                #         {
-                #             "comparison_type": "success",
-                #             "expected_result": True
-                #         }
-                #     ]
-                # },
-                
-                # # Group 3: Gateway Connectivity (Proportional)
-                # # Test 5: Ubuntu1 can reach its gateway
-                # {
-                #     "task_id": "ubuntu1_to_gateway",
-                #     "template_name": "network_ping",
-                #     "execution_device": "ubuntu1",
-                #     "group_id": "gateway_connectivity",
-                #     "parameters": {
-                #         "target_ip": "192.168.101.1",
-                #         "ping_count": 3
-                #     },
-                #     "test_cases": [
-                #         {
-                #             "comparison_type": "success",
-                #             "expected_result": True
-                #         }
-                #     ]
-                # },
-                
-                # # Test 6: Ubuntu2 can reach its gateway
-                # {
-                #     "task_id": "ubuntu2_to_gateway",
-                #     "template_name": "network_ping", 
-                #     "execution_device": "ubuntu2",
-                #     "group_id": "gateway_connectivity",
-                #     "parameters": {
-                #         "target_ip": "192.168.102.1",
-                #         "ping_count": 3
-                #     },
-                #     "test_cases": [
-                #         {
-                #             "comparison_type": "success",
-                #             "expected_result": True
-                #         }
-                #     ]
-                # },
-                
-                # # Group 4: Advanced Services (Proportional) 
-                # # Test 7: Inter-VLAN connectivity (Ubuntu1 to Ubuntu2)
-                # {
-                #     "task_id": "inter_vlan_connectivity",
-                #     "template_name": "network_ping",
-                #     "execution_device": "ubuntu1",
-                #     "group_id": "advanced_services", 
-                #     "parameters": {
-                #         "target_ip": "192.168.102.2",
-                #         "ping_count": 1
-                #     },
-                #     "test_cases": [
-                #         {
-                #             "comparison_type": "success",
-                #             "expected_result": True
-                #         }
-                #     ]
-                # },
-                
-                # # Test 8: SSH connectivity from Ubuntu1 to Ubuntu2
-                # {
-                #     "task_id": "ssh_inter_vlan",
-                #     "template_name": "linux_remote_ssh",
-                #     "execution_mode": "shared",
-                #     "execution_device": "ubuntu1",
-                #     "group_id": "advanced_services",
-                #     "parameters": {
-                #         "target_ip": "192.168.102.2",
-                #         "ssh_user": "ubuntu",  # Adjust if different
-                #         "ssh_password": "ubuntu",  # Adjust if different
-                #     },
-                #     "test_cases": [
-                #         {
-                #             "comparison_type": "success",
-                #             "expected_result": True
-                #         }
-                #     ]
-                # },
-                
-                # # Test 9: Internet connectivity from Ubuntu1 (Individual Task)
-                # {
-                #     "task_id": "ubuntu1_internet",
-                #     "template_name": "network_ping",
-                #     "execution_device": "ubuntu1",
-                #     "parameters": {
-                #         "target_ip": "8.8.8.8",
-                #         "ping_count": 3
-                #     },
-                #     "test_cases": [
-                #         {
-                #             "comparison_type": "success", 
-                #             "expected_result": True
-                #         }
-                #     ],
-                #     "points": 10
-                # },
-                
-                # Test 10: Custom debug example (Individual Task)
-                {
-                    "task_id": "debug_test",
-                    "template_name": "debug_example",
-                    "execution_device": "router",
-                    "parameters": {
-                        "target_ip": "192.168.102.2",
-                        "ping_count": 3
-                    },
-                    # "test_cases": [
-                    #     {
-                    #         "comparison_type": "success",
-                    #         "expected_result": True
-                    #     }
-                    # ],
-                    "points": 7
-                }
-            ],
-        # "groups": [
-        #         {
-        #             "group_id": "router_interfaces",
-        #             "title": "Router Interface Configuration",
-        #             "description": "All router VLAN interfaces must be properly configured and operational",
-        #             "group_type": "proportional",
-        #             "points": 16,
-        #             "continue_on_failure": True,
-        #             "timeout_seconds": 120
-        #         },
-        #         {
-        #             "group_id": "basic_connectivity", 
-        #             "title": "Basic Network Connectivity",
-        #             "description": "Router must be able to reach all devices in both VLANs",
-        #             "group_type": "all_or_nothing", 
-        #             "points": 30,
-        #             "continue_on_failure": True,
-        #             "timeout_seconds": 180
-        #         },
-        #         {
-        #             "group_id": "gateway_connectivity",
-        #             "title": "Gateway Connectivity Test",
-        #             "description": "Devices should be able to reach their default gateways - partial credit allowed",
-        #             "group_type": "proportional",
-        #             "points": 20,
-        #             "continue_on_failure": True,
-        #             "timeout_seconds": 90
-        #         },
-        #         {
-        #             "group_id": "advanced_services",
-        #             "title": "Advanced Network Services", 
-        #             "description": "Inter-VLAN routing and SSH services - partial credit allowed",
-        #             "group_type": "proportional",
-        #             "points": 25,
-        #             "continue_on_failure": True,
-        #             "timeout_seconds": 200
-        #         }
-        #     ]
+      "part_id": "basic-config",
+      "title": "Basic CNI",
+      "network_tasks": [
+        {
+          "task_id": "ping-router",
+          "name": "Ping from Router",
+          "template_name": "network_ping",
+          "execution_device": "router1",
+          "target_devices": [],
+          "parameters": {
+            "target_ip": "8.8.8.8",
+            "ping_count": 4
+          },
+          "test_cases": [
+            {
+              "comparison_type": "success",
+              "expected_result": True
+            }
+          ],
+          "points": 10
+        },
+        {
+          "task_id": "check-int",
+          "name": "Interface Setup",
+          "template_name": "network_ip_int",
+          "execution_device": "router1",
+          "target_devices": [],
+          "parameters": {
+            "interface": "GigabitEthernet0/1.101",
+            "expected_ip": "192.168.101.1"
+          },
+          "test_cases": [
+            {
+              "comparison_type": "equals",
+              "expected_result": True
+            }
+          ],
+          "points": 10
+        }
+      ],
+      "groups": []
     },
     "devices": [
-        {
-            "id": "router",
-            "ip_address": "10.70.38.2",  # Management IP
-            "ansible_connection": "ssh",
-            "credentials": {
-                "ansible_user": "admin",
-                "ansible_password": "cisco"  # Default from your config
-            },
-            "platform": "cisco_ios",
-            "role": "direct"
+      {
+        "id": "router1",
+        "ip_address": "10.70.38.2",
+        "connection_type": "ssh",
+        "credentials": {
+          "username": "admin",
+          "password": "cisco"
         },
-        {
-            "id": "switch",
-            "ip_address": "192.168.101.254",  # VLAN 101 SVI
-            "ansible_connection": "ssh", 
-            "credentials": {
-                "ansible_user": "admin",
-                "ansible_password": "cisco"
-            },
-            "platform": "cisco_ios",
-            "role": "direct"
-        },
-        {
-            "id": "ubuntu1",
-            "ip_address": "192.168.101.2",
-            "ansible_connection": "ssh",
-            "credentials": {
-                "ansible_user": "ubuntu",  # Adjust if different
-                "ansible_password": "ubuntu"  # Adjust if different  
-            },
-            "platform": "linux",
-            "role": "direct"
-        },
-        {
-            "id": "ubuntu2", 
-            "ip_address": "192.168.102.2",
-            "ansible_connection": "ssh",
-            "credentials": {
-                "ansible_user": "ubuntu",  # Adjust if different
-                "ansible_password": "ubuntu"  # Adjust if different
-            },
-            "platform": "linux",
-            "role": "direct"
-        }
+        "platform": "cisco_ios",
+        "role": "direct"
+      }
     ],
     "ip_mappings": {
-        "router_mgmt": "10.70.38.2",
-        "router_vlan101": "192.168.101.1",
-        "router_vlan102": "192.168.102.1", 
-        "switch_mgmt": "192.168.101.254",
-        "ubuntu1_ip": "192.168.101.2",
-        "ubuntu2_ip": "192.168.102.2",
-        "gateway_vlan101": "192.168.101.1",
-        "gateway_vlan102": "192.168.102.1"
+      "router1.gig0_0": "192.168.1.1",
+      "router1.gig0_1": "192.168.1.2",
+      "router1.gig0_2": "192.168.1.3"
     },
-    "callback_url": "http://10.50.37.43:4000/v0/submissions"  # Set to your callback URL if needed
-}
+    "callback_url": "http://10.72.6.143:4000/v0/submissions"
+  }
 
 async def test_topology():
     """Test the complete topology"""
@@ -381,7 +151,7 @@ async def test_topology():
         return
     
     # Run the actual grading
-    print(f"\n🎯 Running grading test ({len(job.part.ansible_tasks)} tasks)...")
+    print(f"\n🎯 Running grading test ({len(job.part.network_tasks)} tasks)...")
     try:
         result = await grading_service.process_grading_job(job)
         

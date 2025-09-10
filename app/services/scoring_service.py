@@ -6,20 +6,20 @@ import re
 import json
 import logging
 from typing import Any, Dict, List, Union
-from app.schemas.models import TestCase, TestCaseResult, AnsibleTask, TaskGroup, TestResult, GroupResult
+from app.schemas.models import TestCase, TestCaseResult, NetworkTask, TaskGroup, TestResult, GroupResult
 
 logger = logging.getLogger(__name__)
 
 class ScoringService:
     """Service for evaluating test results against detailed test cases"""
     
-    def evaluate_test_cases_for_task(self, task: AnsibleTask, extracted_data: Dict[str, Any]) -> List[TestCaseResult]:
+    def evaluate_test_cases_for_task(self, task: NetworkTask, extracted_data: Dict[str, Any]) -> List[TestCaseResult]:
         """
-        Evaluate all test cases for an ansible task against extracted data
+        Evaluate all test cases for a network task against extracted data
         
         Args:
-            task: The ansible task with test cases
-            extracted_data: Data extracted from the device/ansible output
+            task: The network task with test cases
+            extracted_data: Data extracted from the device/task output
             
         Returns:
             List of test case results with scoring
@@ -363,8 +363,8 @@ class ScoringService:
             task_results=task_results,
             message=message
         )
-    
-    def group_tasks_by_id(self, tasks: List[AnsibleTask]) -> Dict[str, List[AnsibleTask]]:
+
+    def group_tasks_by_id(self, tasks: List[NetworkTask]) -> Dict[str, List[NetworkTask]]:
         """
         Group tasks by their group_id
         
@@ -379,8 +379,8 @@ class ScoringService:
                 grouped_tasks.setdefault(task.group_id, []).append(task)
 
         return grouped_tasks
-    
-    def get_ungrouped_tasks(self, tasks: List[AnsibleTask]) -> List[AnsibleTask]:
+
+    def get_ungrouped_tasks(self, tasks: List[NetworkTask]) -> List[NetworkTask]:
         """
         Get tasks that don't belong to any group
         

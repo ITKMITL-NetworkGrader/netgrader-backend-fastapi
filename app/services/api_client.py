@@ -45,6 +45,7 @@ class APIClient:
             try:
                 async with httpx.AsyncClient(timeout=self.timeout) as client:
                     print(f"{callback_url}/result")
+                    print(result.model_dump())
                     response = await client.post(
                         f"{callback_url}/result",
                         json=result.model_dump(),

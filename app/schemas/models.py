@@ -8,14 +8,14 @@ class ExecutionMode(str, Enum):
     SHARED = "shared"         # Shared connection pool for device
 
 class ConnectionType(str, Enum):
-    NETWORK_CLI = "ansible.netcommon.network_cli"
+    NETWORK_CLI = "network_cli"
     SSH = "ssh"
     LOCAL = "local"
 
 class Device(BaseModel):
     id: str
     ip_address: str
-    ansible_connection: str
+    connection_type: str
     credentials: Dict[str, str] = Field(default_factory=dict)
     platform: Optional[str] = None
     jump_host: Optional[str] = Field(None, description="Jump host device ID for proxy connections")
@@ -30,7 +30,7 @@ class TestCase(BaseModel):
     comparison_type: str = Field(..., description="Type of comparison: equals, contains, regex, success, ssh_success, greater_than")
     expected_result: Any = Field(..., description="Expected value/result for comparison")
 
-class AnsibleTask(BaseModel):
+class NetworkTask(BaseModel):
     task_id: str
     name: Optional[str] = None
     template_name: str
@@ -51,15 +51,15 @@ class TaskGroup(BaseModel):
     description: Optional[str] = None
     group_type: str = Field("all_or_nothing", description="'all_or_nothing' or 'proportional'")
     points: int = Field(..., description="Total points for the entire group")
-    rescue_tasks: List[AnsibleTask] = Field(default_factory=list, description="Tasks to run when group fails")
-    cleanup_tasks: List[AnsibleTask] = Field(default_factory=list, description="Tasks to always run after group")
+    rescue_tasks: List[NetworkTask] = Field(default_factory=list, description="Tasks to run when group fails")
+    cleanup_tasks: List[NetworkTask] = Field(default_factory=list, description="Tasks to always run after group")
     continue_on_failure: bool = Field(True, description="Whether to continue execution if group fails")
     timeout_seconds: Optional[int] = Field(None, description="Group execution timeout in seconds")
 
 class Part(BaseModel):
     part_id: str
     title: str
-    ansible_tasks: List[AnsibleTask]
+    network_tasks: List[NetworkTask]
     groups: List[TaskGroup] = Field(default_factory=list, description="Task group configurations")
 
 class GradingJob(BaseModel):

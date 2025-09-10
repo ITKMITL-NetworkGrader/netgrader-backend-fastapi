@@ -1,10 +1,6 @@
 aio-pika==9.4.3
 aiormq==6.8.1
 annotated-types==0.7.0
-ansible==11.7.0
-ansible-core==2.18.6
-ansible-pylibssh==1.2.2
-ansible-runner==2.3.6
 anyio==4.9.0
 bcrypt==4.3.0
 certifi==2025.7.14

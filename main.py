@@ -43,8 +43,8 @@ app = FastAPI(
     
     Core Features:
     1. Job Consumption - Constantly listening to RabbitMQ queue
-    2. Dynamic Playbook Generation - Jinja2 templates create Ansible playbooks in-memory
-    3. Execution - ansible-runner executes playbooks against lab environments
+    2. Dynamic Task Execution - Nornir framework executes network tasks
+    3. Multi-Protocol Support - SSH, SNMP, and network CLI connections
     4. Real-Time Feedback - Streams progress updates via API callbacks
     """,
     version="1.0.0",
@@ -69,8 +69,8 @@ def root():
         "version": "1.0.0",
         "core_features": [
             "Job Consumption (RabbitMQ)",
-            "Dynamic Playbook Generation (Jinja2)",
-            "Execution (ansible-runner)",
+            "Dynamic Task Execution (Nornir)",
+            "Multi-Protocol Support (SSH, SNMP, Network CLI)",
             "Real-Time Feedback (API callbacks)"
         ]
     }

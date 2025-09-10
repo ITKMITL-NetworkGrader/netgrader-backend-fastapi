@@ -64,7 +64,40 @@ class NornirGradingService:
         connection_mode = self._convert_execution_mode(execution_mode)
         
         try:
-            # Use connection manager for isolated connection
+            # Check if this is a localhost device first
+            device = self.connection_manager.devices.get(device_id)
+            if device and (device.ip_address in ["localhost", "127.0.0.1"] or device.ip_address.startswith("127.")):
+                # Execute ping locally using subprocess for localhost devices
+                import subprocess
+                ping_command = ["ping", "-c", str(ping_count), target_ip]
+                
+                try:
+                    result = subprocess.run(ping_command, capture_output=True, text=True, timeout=30)
+                    execution_time = time.time() - start_time
+                    
+                    # Analyze results for local ping
+                    success = result.returncode == 0 and ("0% packet loss" in result.stdout or f"{ping_count} received" in result.stdout)
+                    
+                    return TaskResult(
+                        task_id=task_id,
+                        status=TaskStatus.PASSED if success else TaskStatus.FAILED,
+                        stdout=result.stdout,
+                        stderr=result.stderr,
+                        execution_time=execution_time,
+                        points_earned=points if success else 0,
+                        points_possible=points
+                    )
+                except subprocess.TimeoutExpired:
+                    return TaskResult(
+                        task_id=task_id,
+                        status=TaskStatus.FAILED,
+                        stderr="Ping command timed out",
+                        execution_time=time.time() - start_time,
+                        points_earned=0,
+                        points_possible=points
+                    )
+            
+            # Use connection manager for remote devices
             async with self.connection_manager.get_connection(
                 device_id=device_id, 
                 connection_mode=connection_mode,
