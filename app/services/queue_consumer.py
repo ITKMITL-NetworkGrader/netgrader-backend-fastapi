@@ -113,6 +113,9 @@ class QueueConsumer:
                 total_tasks = len(job.part.network_tasks)
                 logger.info(f"🧪 Total tasks to run: {total_tasks}")
                 
+                # Ensure grading service is initialized before processing
+                await self.grading_service.initialize()
+                
                 # Process the grading job (triggers dynamic playbook generation and execution)
                 result = await self.grading_service.process_grading_job(job)
                 logger.info(f"✅ Successfully processed job: {job.job_id}")

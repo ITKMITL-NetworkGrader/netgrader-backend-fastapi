@@ -14,22 +14,22 @@ from app.schemas.models import GradingJob
 
 # Test job matching your exact topology
 TOPOLOGY_TEST_JOB = {
-    "job_id": "687a2ff20c100d16f99e585c-68bfe68eb5fdda6553c25f72-basic-config-1757479009600",
-    "student_id": "687a2ff20c100d16f99e585c",
-    "lab_id": "68bfe68eb5fdda6553c25f72",
+    "job_id": "65070041-68c13e3cd2dc0a256a18ca2e-basic-connectivity-1757499822450",
+    "student_id": "65070041",
+    "lab_id": "68c13e3cd2dc0a256a18ca2e",
     "part": {
-      "part_id": "basic-config",
-      "title": "Basic CNI",
+      "part_id": "basic-connectivity",
+      "title": "Basic Connectivity",
       "network_tasks": [
         {
-          "task_id": "ping-router",
-          "name": "Ping from Router",
+          "task_id": "ping-test",
+          "name": "Ubuntu ping Router",
           "template_name": "network_ping",
-          "execution_device": "router1",
+          "execution_device": "server1",
           "target_devices": [],
           "parameters": {
-            "target_ip": "8.8.8.8",
-            "ping_count": 4
+            "target_ip": "192.168.101.1",
+            "ping_count": 5
           },
           "test_cases": [
             {
@@ -37,30 +37,42 @@ TOPOLOGY_TEST_JOB = {
               "expected_result": True
             }
           ],
-          "points": 10
+          "points": 5
         },
         {
-          "task_id": "check-int",
-          "name": "Interface Setup",
-          "template_name": "network_ip_int",
-          "execution_device": "router1",
+          "task_id": "ssh-test",
+          "name": "Remote SSH Test",
+          "template_name": "linux_remote_ssh",
+          "execution_device": "server1",
           "target_devices": [],
           "parameters": {
-            "interface": "GigabitEthernet0/1.101",
-            "expected_ip": "192.168.101.1"
+            "target_ip": "192.168.102.2",
+            "ssh_user": "ubuntu",
+            "ssh_password": "ubuntu"
           },
           "test_cases": [
             {
-              "comparison_type": "equals",
+              "comparison_type": "success",
               "expected_result": True
             }
           ],
-          "points": 10
+          "points": 5
         }
       ],
       "groups": []
     },
     "devices": [
+      {
+        "id": "server1",
+        "ip_address": "192.168.101.2",
+        "connection_type": "ssh",
+        "credentials": {
+          "username": "ubuntu",
+          "password": "ubuntu"
+        },
+        "platform": "linux",
+        "role": "direct"
+      },
       {
         "id": "router1",
         "ip_address": "10.70.38.2",
@@ -74,11 +86,11 @@ TOPOLOGY_TEST_JOB = {
       }
     ],
     "ip_mappings": {
-      "router1.gig0_0": "192.168.1.1",
-      "router1.gig0_1": "192.168.1.2",
-      "router1.gig0_2": "192.168.1.3"
+      "server1.ens3": "192.168.101.2",
+      "router1.gig0_0": "10.70.38.2",
+      "router1.gig0_1": "192.168.101.1"
     },
-    "callback_url": "http://10.72.6.143:4000/v0/submissions"
+    "callback_url": "http://10.50.37.44:4000/v0/submissions"
   }
 
 async def test_topology():
