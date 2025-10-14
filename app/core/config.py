@@ -35,4 +35,3 @@ class Config:
     CUSTOM_TASK_REGISTRY_DIR: str = os.getenv("CUSTOM_TASK_REGISTRY_DIR", "custom_tasks")
 
 config = Config()
-print(config.RABBITMQ_URL)
