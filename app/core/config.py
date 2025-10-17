@@ -14,6 +14,7 @@ class Config:
     SHARED_TASKS_DIR: str = os.getenv("SHARED_TASKS_DIR", "/tmp/netgrader/shared_tasks")
     
     # API Configuration for callbacks
+    CALLBACK_URL: str = os.getenv("CALLBACK_URL", "http://localhost:4000/v0/submissions")
     CALLBACK_TIMEOUT: int = int(os.getenv("CALLBACK_TIMEOUT", "30"))
     MAX_RETRIES: int = int(os.getenv("MAX_RETRIES", "3"))
     

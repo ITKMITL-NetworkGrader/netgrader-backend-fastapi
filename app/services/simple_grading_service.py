@@ -34,7 +34,7 @@ class SimpleGradingService:
         self.scoring_service = ScoringService()
         self.grader = NornirGradingService()
         self._initialized = False
-        
+        self.callback_url = config.CALLBACK_URL
         # Initialize SNMP device detection service
         if config.SNMP_ENABLED:
             self.device_detector = DeviceDetectionService(
@@ -136,7 +136,7 @@ class SimpleGradingService:
         logger.info(f"Part: {job.part.title}")
         
         # Send progress update
-        if job.callback_url:
+        if self.callback_url:
             try:
                 progress = ProgressUpdate(
                     job_id=job.job_id,
@@ -146,7 +146,7 @@ class SimpleGradingService:
                     total_tests=len(job.part.network_tasks),
                     percentage=0.0
                 )
-                await self.api_client.send_progress_update(job.callback_url, progress)
+                await self.api_client.send_progress_update(self.callback_url, progress)
             except Exception as e:
                 logger.warning(f"Failed to send progress update: {e}")
         
@@ -155,7 +155,7 @@ class SimpleGradingService:
         devices_needing_detection = [d for d in job.devices if not d.platform or d.platform.lower() == 'unknown']
         if devices_needing_detection:
             logger.info(f"Running device detection for {len(devices_needing_detection)} devices without platform info")
-            if job.callback_url:
+            if self.callback_url:
                 try:
                     progress = ProgressUpdate(
                         job_id=job.job_id,
@@ -165,7 +165,7 @@ class SimpleGradingService:
                         total_tests=len(job.part.network_tasks),
                         percentage=5.0
                     )
-                    await self.api_client.send_progress_update(job.callback_url, progress)
+                    await self.api_client.send_progress_update(self.callback_url, progress)
                 except Exception as e:
                     logger.warning(f"Failed to send progress update: {e}")
             
@@ -319,7 +319,7 @@ class SimpleGradingService:
         )
         
         # Send final result
-        if job.callback_url:
+        if self.callback_url:
             try:
                 # Send final progress update
                 progress = ProgressUpdate(
@@ -330,10 +330,10 @@ class SimpleGradingService:
                     total_tests=total_tasks,
                     percentage=100.0
                 )
-                await self.api_client.send_progress_update(job.callback_url, progress)
+                await self.api_client.send_progress_update(self.callback_url, progress)
                 
                 # Send final result
-                await self.api_client.send_final_result(job.callback_url, result)
+                await self.api_client.send_final_result(self.callback_url, result)
             except Exception as e:
                 logger.error(f"Failed to send final result: {e}")
         
@@ -423,7 +423,7 @@ class SimpleGradingService:
         
         # Send progress update
         progress_value = (task_index / total_tasks) * 100.0
-        if job.callback_url:
+        if self.callback_url:
             try:
                 message = f"Executing task: {task.task_id}"
                 if group_name:
@@ -437,7 +437,7 @@ class SimpleGradingService:
                     total_tests=total_tasks,
                     percentage=progress_value
                 )
-                await self.api_client.send_progress_update(job.callback_url, progress)
+                await self.api_client.send_progress_update(self.callback_url, progress)
             except Exception as e:
                 logger.warning(f"Failed to send progress update: {e}")
         
