@@ -10,7 +10,7 @@ from app.schemas.models import GradingJob
 # from app.services.nornir_grading.network_grading_service import NetworkGradingService
 
 # Current grading service
-from app.services.simple_grading_service import SimpleGradingService as GradingService
+from app.services.grading.simple_grading_service import SimpleGradingService as GradingService
 from app.core.config import config
 
 logger = logging.getLogger(__name__)

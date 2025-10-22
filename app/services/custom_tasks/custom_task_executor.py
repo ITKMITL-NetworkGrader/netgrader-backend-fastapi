@@ -20,7 +20,7 @@ from .custom_task_registry import (
     CustomTaskValidationCondition,
     CustomTaskRegistry
 )
-from .network_grader import TaskResult, TaskStatus
+from app.services.grading.network_grader import TaskResult, TaskStatus
 
 logger = logging.getLogger(__name__)
 

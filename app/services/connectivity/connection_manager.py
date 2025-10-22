@@ -20,7 +20,7 @@ from nornir import InitNornir
 from nornir.core.inventory import Inventory
 from nornir.core.task import Task, Result
 
-from .network_grader import Device as SimpleDevice
+from app.services.grading.network_grader import Device as SimpleDevice
 
 logger = logging.getLogger(__name__)
 

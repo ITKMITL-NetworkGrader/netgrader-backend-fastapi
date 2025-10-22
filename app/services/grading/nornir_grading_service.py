@@ -21,7 +21,7 @@ from nornir_utils.plugins.functions import print_result
 
 # Import our existing models and new connection manager
 from .network_grader import Device as SimpleDevice, TaskResult, TaskStatus
-from .connection_manager import ConnectionManager, ConnectionMode
+from app.services.connectivity.connection_manager import ConnectionManager, ConnectionMode
 from app.schemas.models import ExecutionMode
 
 logger = logging.getLogger(__name__)
@@ -542,7 +542,7 @@ class NornirGradingService:
         
         try:
             # Import CustomTaskExecutor here to avoid circular imports
-            from .custom_task_executor import CustomTaskExecutor
+            from app.services.custom_tasks.custom_task_executor import CustomTaskExecutor
             
             # Create executor if not already exists
             if not hasattr(self, '_custom_executor'):

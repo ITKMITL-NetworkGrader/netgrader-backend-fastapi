@@ -35,4 +35,12 @@ class Config:
     # Custom Task Configuration
     CUSTOM_TASK_REGISTRY_DIR: str = os.getenv("CUSTOM_TASK_REGISTRY_DIR", "custom_tasks")
 
+    # MinIO Configuration
+    MINIO_ENDPOINT: str = os.getenv("MINIO_ENDPOINT", "localhost")
+    MINIO_PORT: int = int(os.getenv("MINIO_PORT", "9000"))
+    MINIO_USE_SSL: bool = os.getenv("MINIO_USE_SSL", "false").lower() == "true"
+    MINIO_ACCESS_KEY: str = os.getenv("MINIO_ACCESS_KEY", "minioadmin")
+    MINIO_SECRET_KEY: str = os.getenv("MINIO_SECRET_KEY", "minioadmin")
+    MINIO_BUCKET_NAME: str = os.getenv("MINIO_BUCKET_NAME", "netgrader")
+
 config = Config()

@@ -11,14 +11,14 @@ from datetime import datetime
 from typing import Dict, Any
 # Import existing models and services
 from app.schemas.models import GradingJob, TestResult, GradingResult, Device, NetworkTask, ProgressUpdate, DebugInfo, TaskGroup, GroupResult
-from app.services.api_client import APIClient as ApiClient
-from app.services.scoring_service import ScoringService
+from app.services.connectivity.api_client import APIClient as ApiClient
+from app.services.grading.scoring_service import ScoringService
 
 # Import our working components
 from .nornir_grading_service import NornirGradingService
 from .network_grader import Device as SimpleDevice, TaskResult, TaskStatus
-from .snmp_detection import DeviceDetectionService
-from .custom_task_registry import CustomTaskRegistry
+from app.services.connectivity.snmp_detection import DeviceDetectionService
+from app.services.custom_tasks.custom_task_registry import CustomTaskRegistry
 from app.core.config import config
 
 logger = logging.getLogger(__name__)

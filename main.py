@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from app.schemas.models import GradingJob
-from app.services.queue_consumer import consumer, start_consumer, stop_consumer
+from app.services.pipeline.queue_consumer import consumer, start_consumer, stop_consumer
 from app.core.config import config
 
 # Configure logging
