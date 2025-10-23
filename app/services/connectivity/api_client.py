@@ -1,7 +1,10 @@
 import httpx
 import asyncio
 import logging
-from typing import Optional
+from typing import Optional, List, Any, Dict
+
+from pydantic import BaseModel
+
 from app.schemas.models import ProgressUpdate, GradingResult
 from app.core.config import config
 
@@ -60,6 +63,10 @@ class APIClient:
         
         logger.error(f"Failed to send final result for job {result.job_id} after {self.max_retries} attempts")
         return False
+
+    def batfish(self) -> "BatfishAPI":
+        """Return a Batfish API helper instance configured from global config."""
+        return BatfishAPI(timeout=self.timeout, max_retries=self.max_retries)
     
     async def notify_job_started(self, callback_url: str, job_id: str) -> bool:
         """Notify that a grading job has started"""
@@ -80,3 +87,48 @@ class APIClient:
         except Exception as e:
             logger.error(f"Failed to send job started notification for job {job_id}: {e}")
             return False
+    
+def _build_batfish_url(path: str) -> str:
+    return f"{config.BATFISH_API.rstrip('/')}/{path.lstrip('/')}"
+
+
+class BatfishAPI:
+    """Helper wrapper around Batfish endpoints used by NetGrader."""
+
+    def __init__(self, timeout: int = config.CALLBACK_TIMEOUT, max_retries: int = config.MAX_RETRIES):
+        self.timeout = timeout
+        self.max_retries = max_retries
+
+    async def post_acl_lines_minio(self, request_json: Dict[str, Any]) -> Dict[str, Any]:
+        """Post a request to /aclLines/minio using the exact JSON structure you provided.
+
+        Expected shape:
+        {
+          "payload": { ... },          # BatfishModel-like
+          "minio_payload": { ... }     # BatfishMinIOSnapshot-like
+        }
+
+        This method will forward the JSON as-is to the Batfish service and return parsed JSON.
+        """
+        url = _build_batfish_url("/question/aclLines/minio")
+
+        # Basic validation to help catch mistakes early
+        if not isinstance(request_json, dict):
+            raise ValueError("request_json must be a dictionary")
+
+        if "minio_payload" not in request_json:
+            raise ValueError("request_json must contain 'minio_payload' key")
+
+        for attempt in range(self.max_retries):
+            try:
+                async with httpx.AsyncClient(timeout=self.timeout) as client:
+                    logger.debug("Posting raw request to Batfish %s (attempt %d)", url, attempt + 1)
+                    resp = await client.post(url, json=request_json)
+                    resp.raise_for_status()
+                    return resp.json()
+            except Exception as exc:
+                logger.error("Batfish raw POST attempt %d failed: %s", attempt + 1, exc)
+                if attempt < self.max_retries - 1:
+                    await asyncio.sleep(2 ** attempt)
+
+        raise RuntimeError(f"Failed to POST to Batfish at {url} after {self.max_retries} attempts")

@@ -43,4 +43,6 @@ class Config:
     MINIO_SECRET_KEY: str = os.getenv("MINIO_SECRET_KEY", "minioadmin")
     MINIO_BUCKET_NAME: str = os.getenv("MINIO_BUCKET_NAME", "netgrader")
 
+    BATFISH_API: str = os.getenv("BATFISH_API", "http://localhost:8080")
+
 config = Config()
