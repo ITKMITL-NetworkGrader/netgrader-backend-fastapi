@@ -15,11 +15,20 @@ parameters:
     required: true
     example: "10.0.0.0/8"
   - name: "expected_next_hop"
-    datatype: "string"
+    datatype: "ip_address"
     description: "Expected next-hop IP address for the route"
     required: true
     example: "192.168.1.1"
+  - name: "boolean_value"
+    datatype: "boolean"
+    description: "Boolean value for validation"
+    required: true
 
+debug:
+  custom_debug_points:
+    - "routing_data"
+    - "next_hop_ips"
+    - "expected_next_hop_match"
 commands:
   - name: "get_routing_table"
     action: "napalm_get"
@@ -27,44 +36,21 @@ commands:
       getter: "get_route_to"
       destination: "{{target_network}}"
     register: "routing_data"
-  
-  - name: "backup_netmiko_routes"
-    action: "netmiko_send_command"
-    parameters:
-      command: "show ip route {{target_network}}"
-    register: "route_output"
-  
-  - name: "parse_route_entries"
+
+  - name: "parse_next_hop"
     action: "parse_output"
     parameters:
-      input: "{{route_output}}"
-      pattern: "via (\\d+\\.\\d+\\.\\d+\\.\\d+)"
+      input: "{{routing_data}}"
+      pattern: "['\"]next_hop['\"]:\\s*['\"]{{expected_next_hop}}['\"]"
     register: "next_hop_ips"
-  
-  - name: "parse_route_metric"
-    action: "parse_output"
-    parameters:
-      input: "{{route_output}}"
-      pattern: "\\[(\\d+)/(\\d+)\\]"
-    register: "route_metrics"
 
 validation:
   - field: "routing_data"
     condition: "exists"
-    value: true
-    description: "Routing table data should be retrieved via NAPALM"
-  
-  - field: "next_hop_ips.match_count"
-    condition: "greater_than"
-    value: 0
-    description: "At least one next-hop IP should be found for the target network"
-  
-  - field: "route_metrics.match_count"
-    condition: "greater_than"
-    value: 0
-    description: "Route metrics should be present in routing output"
-  
-  - field: "route_output"
+    value: "{{boolean_value}}"
+    description: "At least one next-hop entry should be parsed from routing_data"
+
+  - field: "next_hop_ips.first_match"
     condition: "contains"
     value: "{{expected_next_hop}}"
-    description: "Routing table should contain expected next-hop address"
+    description: "The first next-hop entry should match the expected value"

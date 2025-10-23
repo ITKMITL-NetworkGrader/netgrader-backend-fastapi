@@ -47,20 +47,34 @@ commands:
       pattern: "Access Mode VLAN:\\s+(\\d+)"
     register: "interface_access_vlan"
 
+  - name: "expected_vlan_in_list"
+    action: "parse_output"
+    parameters:
+      input: "{{vlan_output}}"
+      pattern: '^\s*{{expected_vlan_id}}\b'
+    register: "expected_vlan_match"
+
+  - name: "expected_access_vlan_on_interface"
+    action: "parse_output"
+    parameters:
+      input: "{{interface_vlan}}"
+      pattern: 'Access Mode VLAN:\s*{{expected_vlan_id}}(\b|\s|\()'
+    register: "expected_access_vlan"
+
 validation:
   - field: "configured_vlans.match_count"
     condition: "greater_than"
     value: 1
     description: "At least 2 VLANs should be configured (including default)"
-  
-  - field: "vlan_output"
-    condition: "contains"
-    value: "{{expected_vlan_id}}"
+
+  - field: "expected_vlan_match.match_count"
+    condition: "greater_than"
+    value: 0
     description: "Expected VLAN ID should exist in VLAN configuration"
-  
-  - field: "interface_access_vlan.first_match"
-    condition: "equals"
-    value: "{{expected_vlan_id}}"
+
+  - field: "expected_access_vlan.match_count"
+    condition: "greater_than"
+    value: 0
     description: "Interface should be assigned to the expected VLAN"
   
   - field: "interface_vlan"

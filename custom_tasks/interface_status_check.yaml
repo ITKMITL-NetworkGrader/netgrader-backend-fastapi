@@ -28,7 +28,7 @@ commands:
     action: "parse_output"
     parameters:
       input: "{{interface_data}}"
-      pattern: "\"is_up\":\\s*true"
+      pattern: '(?mi)^(?:\s*)(\S+):\s*UP$'
     register: "up_interfaces"
 
 validation:

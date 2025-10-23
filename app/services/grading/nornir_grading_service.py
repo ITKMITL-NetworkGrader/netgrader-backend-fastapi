@@ -368,6 +368,19 @@ class NornirGradingService:
         execution_mode = parameters.get("execution_mode", ExecutionMode.ISOLATED)
         session_id = parameters.get("stateful_session_id")
         connection_timeout = parameters.get("connection_timeout", 30)
+
+        # Collect additional kwargs for napalm_get (e.g., destination for get_route_to)
+        napalm_kwargs = {
+            key: value
+            for key, value in parameters.items()
+            if key not in {
+                "operation",
+                "points",
+                "execution_mode",
+                "stateful_session_id",
+                "connection_timeout"
+            }
+        }
         
         # Convert execution mode
         connection_mode = self._convert_execution_mode(execution_mode)
@@ -398,7 +411,8 @@ class NornirGradingService:
                 result = device_nr.run(
                     task=napalm_get,
                     getters=[getter],
-                    name=f"napalm_{getter}"
+                    name=f"napalm_{getter}",
+                    **napalm_kwargs
                 )
                 
                 # Analyze results
@@ -466,9 +480,37 @@ class NornirGradingService:
                             ip_str = ", ".join(ips) if ips else "No IPs"
                             stdout_lines.append(f"  {iface}: {ip_str}")
                             
+                # elif getter == "route_to":
+                #     destination = napalm_kwargs.get("destination")
+                #     protocol_filter = napalm_kwargs.get("protocol")
+
+                #     stdout_lines.append("Routing information (NAPALM get_route_to):")
+                #     if destination:
+                #         stdout_lines.append(f"  Destination filter: {destination}")
+                #     if protocol_filter:
+                #         stdout_lines.append(f"  Protocol filter: {protocol_filter}")
+
+                #     if not napalm_data:
+                #         stdout_lines.append("  No matching routes were returned")
+                #         success = False
+                #     else:
+                #         for route_prefix, entries in napalm_data.items():
+                #             stdout_lines.append(f"  Route {route_prefix}:")
+                #             for entry in entries:
+                #                 next_hop = entry.get("next_hop", "unknown")
+                #                 protocol = entry.get("protocol", "unknown")
+                #                 age = entry.get("age")
+                #                 metric = entry.get("metric")
+                #                 preference = entry.get("preference")
+                #                 stdout_lines.append(
+                #                     f"    via {next_hop} ({protocol}) pref={preference} metric={metric} age={age}"
+                #                 )
+                #         # Mark success if at least one entry is returned
+                #         success = len(napalm_data) > 0
+                    
                 else:
                     # Generic output for other getters
-                    stdout_lines.append(f"NAPALM {getter} result:")
+                    # stdout_lines.append(f"NAPALM {getter} result:")
                     stdout_lines.append(str(napalm_data))
                 
                 return TaskResult(

@@ -11,7 +11,7 @@ import json
 import time
 import yaml
 from typing import Dict, Any, List, Optional, Union
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from .custom_task_registry import (
     CustomTaskDefinition, 
@@ -206,6 +206,17 @@ class CustomTaskValidationEngine:
                 return bool(re.search(str(expected), actual))
             
             elif condition == CustomTaskValidationCondition.EXISTS:
+                if isinstance(expected, bool):
+                    return (actual is not None and actual != "") == expected
+                elif isinstance(expected, str):
+                    expected_lower = expected.lower()
+                    if expected_lower in ["true", "yes", "1"]:
+                        return actual is not None and actual != ""
+                    elif expected_lower in ["false", "no", "0"]:
+                        return actual is None or actual == ""
+                    else:
+                        logger.warning(f"Invalid expected value for EXISTS condition: {expected}")
+                        return False
                 return actual is not None and actual != ""
             
             else:
@@ -316,11 +327,12 @@ class CustomTaskExecutor:
             # Validate results against validation rules
             validation_results = []
             for validation_rule in task_definition.validation_rules:
+                resolved_validation_rule = self._resolve_validation_rule(validation_rule, context)
                 # Determine what data to validate against
-                validation_data = self._prepare_validation_data(context, validation_rule, command_results)
+                validation_data = self._prepare_validation_data(context, resolved_validation_rule, command_results)
                 
                 validation_result = self.validation_engine.validate_result(
-                    validation_data, validation_rule
+                    validation_data, resolved_validation_rule
                 )
                 validation_results.append(validation_result)
             
@@ -657,30 +669,62 @@ class CustomTaskExecutor:
         """
         resolved = {}
         for key, value in parameters.items():
-            if isinstance(value, str):
-                # Simple variable substitution using {{variable}} syntax
-                resolved_value = value
-                # Replace context variables
-                for var_name, var_value in context.variables.items():
-                    placeholder = f"{{{{{var_name}}}}}"
-                    if placeholder in resolved_value:
-                        resolved_value = resolved_value.replace(placeholder, str(var_value))
-                
-                # Replace task parameters
-                for param_name, param_value in context.parameters.items():
-                    placeholder = f"{{{{{param_name}}}}}"
-                    if placeholder in resolved_value:
-                        resolved_value = resolved_value.replace(placeholder, str(param_value))
-                
-                # Remove any remaining unresolved placeholders
-                if re.search(r'\{\{[^}]+\}\}', resolved_value):
-                    #if matched, it will not updated resolved value in resolved[key].
-                    continue
-                resolved[key] = resolved_value
-            else:
-                resolved[key] = value
+            rendered_value = self._render_template_value(value, context)
+            if rendered_value is not None:
+                resolved[key] = rendered_value
         
         return resolved
+    
+    def _resolve_validation_rule(self,
+                                 validation_rule: CustomTaskValidationRule,
+                                 context: CustomTaskExecutionContext) -> CustomTaskValidationRule:
+        """Create a copy of the validation rule with dynamic value resolution."""
+        rendered_value = self._render_template_value(validation_rule.value, context)
+        if rendered_value is None:
+            rendered_value = validation_rule.value
+        return replace(validation_rule, value=rendered_value)
+    
+    def _render_template_value(self, value: Any, context: CustomTaskExecutionContext) -> Any:
+        """
+        Resolve templated values using context variables and task parameters.
+        Returns None if unresolved placeholders remain in a string.
+        """
+        if isinstance(value, str):
+            return self._render_template_string(value, context)
+        if isinstance(value, list):
+            rendered_list = []
+            for item in value:
+                rendered_item = self._render_template_value(item, context)
+                if rendered_item is None:
+                    return None
+                rendered_list.append(rendered_item)
+            return rendered_list
+        if isinstance(value, dict):
+            rendered_dict = {}
+            for key, item in value.items():
+                rendered_item = self._render_template_value(item, context)
+                if rendered_item is None:
+                    return None
+                rendered_dict[key] = rendered_item
+            return rendered_dict
+        return value
+    
+    def _render_template_string(self, template: str, context: CustomTaskExecutionContext) -> Optional[str]:
+        """Replace {{placeholders}} in a string using context variables and parameters."""
+        resolved_value = template
+        for var_name, var_value in context.variables.items():
+            placeholder = f"{{{{{var_name}}}}}"
+            if placeholder in resolved_value:
+                resolved_value = resolved_value.replace(placeholder, str(var_value))
+        
+        for param_name, param_value in context.parameters.items():
+            placeholder = f"{{{{{param_name}}}}}"
+            if placeholder in resolved_value:
+                resolved_value = resolved_value.replace(placeholder, str(param_value))
+        
+        if re.search(r'\{\{[^}]+\}\}', resolved_value):
+            return None
+        return resolved_value
     
     def _prepare_validation_data(self, 
                                context: CustomTaskExecutionContext,

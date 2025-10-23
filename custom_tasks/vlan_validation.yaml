@@ -1,0 +1,45 @@
+# Interface Status Check - Custom Task Example  
+# Demonstrates checking multiple VLAN parameters using NAPALM
+
+task_name: "vlan_napalm_get"
+description: "Comprehensive VLAN status and configuration check"
+connection_type: "napalm"
+author: "NetGrader Team"
+version: "1.0.0" 
+points: 10
+
+parameters:
+  - name: "interface_name"
+    datatype: "string"
+    description: "Name of the interface to check (e.g., GigabitEthernet0/1)"
+    required: true
+    example: "GigabitEthernet0/1"
+  - name: "expected_vlan_id"
+    datatype: "integer"
+    description: "Expected VLAN ID that should be configured"
+    required: true
+    example: "100"
+
+debug:
+  custom_debug_points:
+    - "configured"
+
+commands:
+  - name: "get_vlan_data"
+    action: "napalm_get"
+    parameters:
+      getter: "get_vlans"
+    register: "vlan_data"
+
+  - name: "parse_vlan_count"
+    action: "parse_output"
+    parameters:
+      input: "{{vlan_data}}"
+      pattern: "'{{expected_vlan_id}}':\\s*\\{[^}]*?'interfaces':\\s*\\[[^\\]]*?'{{interface_name}}'[^\\]]*\\]"
+    register: "configured"
+
+validation:
+  - field: "configured.match_count"
+    condition: "greater_than"
+    value: 0
+    description: "Expected VLAN ID should be configured on the specified interface"
