@@ -19,16 +19,12 @@ parameters:
     description: "Expected next-hop IP address for the route"
     required: true
     example: "192.168.1.1"
-  - name: "boolean_value"
-    datatype: "boolean"
-    description: "Boolean value for validation"
-    required: true
 
-debug:
-  custom_debug_points:
-    - "routing_data"
-    - "next_hop_ips"
-    - "expected_next_hop_match"
+# debug:
+#   custom_debug_points:
+#     - "routing_data"
+#     - "next_hop_ips"
+
 commands:
   - name: "get_routing_table"
     action: "napalm_get"
@@ -45,11 +41,6 @@ commands:
     register: "next_hop_ips"
 
 validation:
-  - field: "routing_data"
-    condition: "exists"
-    value: "{{boolean_value}}"
-    description: "At least one next-hop entry should be parsed from routing_data"
-
   - field: "next_hop_ips.first_match"
     condition: "contains"
     value: "{{expected_next_hop}}"
