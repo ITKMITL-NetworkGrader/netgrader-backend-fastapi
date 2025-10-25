@@ -5,5 +5,4 @@ __pycache__
 .claude
 .env
 nornir.log
-
 ntc-template-backup/

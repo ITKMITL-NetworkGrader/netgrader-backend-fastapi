@@ -5,6 +5,7 @@ This service executes custom tasks defined through YAML DSL, providing
 a bridge between instructor-defined tests and the Nornir execution engine.
 """
 
+import io
 import logging
 import re
 import json
@@ -12,6 +13,12 @@ import time
 import yaml
 from typing import Dict, Any, List, Optional, Union
 from dataclasses import dataclass, replace
+
+try:
+    import textfsm
+except ImportError:  # pragma: no cover - optional dependency in some environments
+    textfsm = None
+from jinja2 import Environment, StrictUndefined, TemplateError
 
 from .custom_task_registry import (
     CustomTaskDefinition, 
@@ -23,6 +30,15 @@ from .custom_task_registry import (
 from app.services.grading.network_grader import TaskResult, TaskStatus
 
 logger = logging.getLogger(__name__)
+
+
+_jinja_env = Environment(
+    undefined=StrictUndefined,
+    trim_blocks=True,
+    lstrip_blocks=True,
+)
+
+_SIMPLE_TEMPLATE_PATTERN = re.compile(r"^\s*\{\{\s*([a-zA-Z0-9_.]+)\s*\}\}\s*$")
 
 
 @dataclass
@@ -507,7 +523,7 @@ class CustomTaskExecutor:
         """
         try:
             # Resolve parameters with context variables and task parameters
-            resolved_params = self._resolve_parameters(command.parameters, context)
+            resolved_params = self._resolve_parameters(command, context)
             # Execute based on action type
             if command.action == "napalm_get":
                 result = await self._execute_napalm_command(command, context, resolved_params)
@@ -527,7 +543,7 @@ class CustomTaskExecutor:
                 "command_action": command.action,
                 "success": True,
                 "result": result,
-                "stdout": str(result) if result else "",
+                "stdout": self._stringify_result(result),
                 "stderr": ""
             }
             
@@ -564,34 +580,67 @@ class CustomTaskExecutor:
         
         # Extract the actual data from Nornir result
         if nornir_result.status == TaskStatus.PASSED:
-            # Parse JSON output if available
-            try:
-                return json.loads(nornir_result.stdout)
-            except (json.JSONDecodeError, AttributeError):
-                return nornir_result.stdout
+            payload = nornir_result.stdout
+            if isinstance(payload, (dict, list)):
+                return payload
+
+            # Attempt to parse structured data from string outputs
+            if isinstance(payload, str):
+                try:
+                    return json.loads(payload)
+                except (json.JSONDecodeError, TypeError):
+                    pass
+
+                try:
+                    parsed_yaml = yaml.safe_load(payload)
+                    if isinstance(parsed_yaml, (dict, list)):
+                        return parsed_yaml
+                except yaml.YAMLError:
+                    pass
+
+            return payload
         else:
             raise Exception(f"NAPALM command failed: {nornir_result.stderr}")
     
-    async def _execute_netmiko_command(self, 
+    async def _execute_netmiko_command(self,
                                      command: CustomTaskCommand,
                                      context: CustomTaskExecutionContext,
-                                     resolved_params: Dict[str, Any]) -> str:
-        """Execute Netmiko command through Nornir service"""
+                                     resolved_params: Dict[str, Any]) -> Any:
+        """Execute Netmiko command through Nornir service with optional TextFSM parsing."""
         netmiko_params = {
             "command": resolved_params.get("command", ""),
             "points": context.points_possible  # Use context points which already has the override logic
         }
-        
+
+        for key in [
+            "execution_mode",
+            "stateful_session_id",
+            "connection_timeout",
+            "use_textfsm",
+            "textfsm_template"
+        ]:
+            if key in resolved_params:
+                netmiko_params[key] = resolved_params[key]
+
         nornir_result = await self.nornir_service.execute_command_task(
             task_id=f"{context.task_id}_{command.name}",
             device_id=context.device_id,
             parameters=netmiko_params
         )
-        
-        if nornir_result.status == TaskStatus.PASSED:
-            return nornir_result.stdout
-        else:
+
+        if nornir_result.status != TaskStatus.PASSED:
             raise Exception(f"Netmiko command failed: {nornir_result.stderr}")
+
+        if nornir_result.debug_info:
+            structured = nornir_result.debug_info.get("structured_output")
+            raw_output = nornir_result.debug_info.get("raw_output")
+            if structured is not None:
+                return {
+                    "raw_output": raw_output or nornir_result.stdout,
+                    "structured_output": structured
+                }
+
+        return nornir_result.stdout
     
     async def _execute_ping_command(self, 
                                   command: CustomTaskCommand,
@@ -618,28 +667,98 @@ class CustomTaskExecutor:
                              command: CustomTaskCommand,
                              context: CustomTaskExecutionContext,
                              resolved_params: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute output parsing command"""
+        """Execute output parsing command with pluggable parsers."""
         input_text = resolved_params.get("input", "")
-        pattern = resolved_params.get("pattern", "")
-        
-        if not pattern:
-            return {"input": input_text, "parsed": input_text}
-        
-        try:
-            # Apply regex pattern
-            matches = re.findall(pattern, input_text, re.MULTILINE | re.IGNORECASE)
-            
-            # Return structured result
+        parser_type = (resolved_params.get("parser") or "regex").lower()
+
+        if parser_type == "regex":
+            pattern = resolved_params.get("pattern", "")
+            if not pattern:
+                return {"input": input_text, "parsed": input_text, "parser": "regex"}
+
+            try:
+                matches = re.findall(pattern, input_text, re.MULTILINE | re.IGNORECASE)
+            except re.error as exc:
+                raise Exception(f"Invalid regex pattern '{pattern}': {exc}") from exc
+
             return {
                 "input": input_text,
                 "pattern": pattern,
                 "matches": matches,
                 "match_count": len(matches),
-                "first_match": matches[0] if matches else None
+                "first_match": matches[0] if matches else None,
+                "parser": "regex"
             }
-            
-        except re.error as e:
-            raise Exception(f"Invalid regex pattern '{pattern}': {e}")
+
+        if parser_type == "textfsm":
+            if textfsm is None:
+                raise Exception("TextFSM parser requires the 'textfsm' package to be installed")
+
+            template_path = resolved_params.get("template_path")
+            template_content = resolved_params.get("template")
+
+            if not template_content and template_path:
+                try:
+                    with open(template_path, "r", encoding="utf-8") as template_file:
+                        template_content = template_file.read()
+                except OSError as exc:
+                    raise Exception(f"Unable to load TextFSM template '{template_path}': {exc}") from exc
+
+            if not template_content:
+                raise Exception("TextFSM parser requires 'template' or 'template_path' parameter")
+
+            fsm = textfsm.TextFSM(io.StringIO(template_content))
+            raw_rows = fsm.ParseText(input_text or "")
+            structured_rows = [dict(zip(fsm.header, row)) for row in raw_rows]
+
+            return {
+                "input": input_text,
+                "parser": "textfsm",
+                "template_header": list(fsm.header),
+                "records": structured_rows,
+                "raw_matches": raw_rows,
+                "match_count": len(structured_rows)
+            }
+
+        if parser_type == "jinja":
+            template_source = (
+                resolved_params.get("template")
+                or resolved_params.get("pattern")
+                or ""
+            )
+            if not template_source:
+                raise Exception("Jinja parser requires a 'template' or 'pattern' parameter")
+
+            try:
+                template = _jinja_env.from_string(template_source)
+                rendered = template.render(
+                    input=input_text,
+                    parameters=context.parameters,
+                    variables=context.variables
+                )
+            except TemplateError as exc:
+                raise Exception(f"Jinja parsing failed: {exc}") from exc
+
+            structured = rendered
+            if isinstance(rendered, str):
+                rendered_strip = rendered.strip()
+                if rendered_strip:
+                    try:
+                        structured = json.loads(rendered_strip)
+                    except json.JSONDecodeError:
+                        try:
+                            structured = yaml.safe_load(rendered_strip)
+                        except yaml.YAMLError:
+                            structured = rendered
+
+            return {
+                "input": input_text,
+                "parser": "jinja",
+                "rendered": rendered,
+                "data": structured
+            }
+
+        raise Exception(f"Unsupported parser type '{parser_type}' for parse_output command")
     
     async def _execute_custom_script(self, 
                                    command: CustomTaskCommand,
@@ -655,25 +774,75 @@ class CustomTaskExecutor:
         }
     
     def _resolve_parameters(self, 
-                          parameters: Dict[str, Any],
+                          command: CustomTaskCommand,
                           context: CustomTaskExecutionContext) -> Dict[str, Any]:
         """
         Resolve parameters using context variables and task parameters
         
         Args:
-            parameters: Raw parameters from command definition
+            command: Command whose parameters are being resolved
             context: Execution context with variables
             
         Returns:
             Resolved parameters with substituted values
         """
+        parameters = command.parameters or {}
+        render_context = {
+            **context.parameters,
+            **context.variables,
+            "parameters": context.parameters,
+            "variables": context.variables,
+        }
+        parser_type = None
+        if command.action == "parse_output":
+            parser_value = parameters.get("parser") or "regex"
+            if isinstance(parser_value, str):
+                parser_type = parser_value.lower()
+
         resolved = {}
         for key, value in parameters.items():
+            if (
+                command.action == "parse_output"
+                and parser_type == "jinja"
+                and key in {"template", "pattern"}
+                and isinstance(value, str)
+            ):
+                # Preserve Jinja templates for parsing; defer rendering to parser execution
+                resolved[key] = value
+                continue
+
+            if isinstance(value, str):
+                simple_match = _SIMPLE_TEMPLATE_PATTERN.match(value)
+                if simple_match:
+                    placeholder_value = self._lookup_context_value(
+                        render_context, simple_match.group(1)
+                    )
+                    if placeholder_value is not None:
+                        resolved[key] = placeholder_value
+                        continue
+
             rendered_value = self._render_template_value(value, context)
             if rendered_value is not None:
                 resolved[key] = rendered_value
         
         return resolved
+
+    @staticmethod
+    def _lookup_context_value(source: Dict[str, Any], path: str) -> Any:
+        """Resolve dotted paths against a dict-based context."""
+        current: Any = source
+        for part in path.split("."):
+            if isinstance(current, dict):
+                if part in current:
+                    current = current[part]
+                else:
+                    return None
+            else:
+                if hasattr(current, part):
+                    current = getattr(current, part)
+                else:
+                    return None
+        return current
     
     def _resolve_validation_rule(self,
                                  validation_rule: CustomTaskValidationRule,
@@ -710,21 +879,23 @@ class CustomTaskExecutor:
         return value
     
     def _render_template_string(self, template: str, context: CustomTaskExecutionContext) -> Optional[str]:
-        """Replace {{placeholders}} in a string using context variables and parameters."""
-        resolved_value = template
-        for var_name, var_value in context.variables.items():
-            placeholder = f"{{{{{var_name}}}}}"
-            if placeholder in resolved_value:
-                resolved_value = resolved_value.replace(placeholder, str(var_value))
-        
-        for param_name, param_value in context.parameters.items():
-            placeholder = f"{{{{{param_name}}}}}"
-            if placeholder in resolved_value:
-                resolved_value = resolved_value.replace(placeholder, str(param_value))
-        
-        if re.search(r'\{\{[^}]+\}\}', resolved_value):
+        """Render a template string using Jinja for rich substitutions."""
+        if "{{" not in template and "{%" not in template:
+            return template
+
+        render_context = {
+            **context.parameters,
+            **context.variables,
+            "parameters": context.parameters,
+            "variables": context.variables,
+        }
+
+        try:
+            compiled = _jinja_env.from_string(template)
+            return compiled.render(**render_context)
+        except TemplateError as exc:
+            logger.debug("Failed to render template '%s': %s", template, exc)
             return None
-        return resolved_value
     
     def _prepare_validation_data(self, 
                                context: CustomTaskExecutionContext,
@@ -743,41 +914,59 @@ class CustomTaskExecutor:
         """
         field_path = validation_rule.field
         
-        # Create a combined data structure with all variables and command results
-        validation_data = {}
-        
-        # Add context variables (results stored with register names)
-        validation_data.update(context.variables)
-        
-        # Add command results by name for direct access
+        # Prepare combined data structure with variables and command results
+        command_map = {}
         for cmd_result in command_results:
             cmd_name = cmd_result.get("command_name", "")
-            if cmd_name:
-                validation_data[cmd_name] = cmd_result
-        
+            if not cmd_name:
+                continue
+            command_map[cmd_name] = {
+                **cmd_result,
+                "result": cmd_result.get("result")
+            }
+
+        validation_data = {
+            **context.variables,
+            "variables": context.variables,
+            "commands": command_map
+        }
+        validation_data.update(command_map)
+
         # Special handling for common field patterns
         if "." in field_path:
             # Handle dot notation like "ssh_status.result" or "up_interface_count.match_count"
             parts = field_path.split(".")
             base_field = parts[0]
-            
+
             # Look for the base field in variables first (registered results)
             if base_field in context.variables:
                 return context.variables
-            
+
             # Then look in command results
-            for cmd_result in command_results:
-                if cmd_result.get("command_name") == base_field:
-                    return validation_data
+            if base_field in command_map:
+                return validation_data
         else:
             # Simple field name - look in variables first
             if field_path in context.variables:
                 return context.variables
-            
+
             # Then look for command with matching name
-            for cmd_result in command_results:
-                if cmd_result.get("command_name") == field_path:
-                    return validation_data
-        
+            if field_path in command_map:
+                return validation_data
+
         # Default to all available data
         return validation_data
+
+    @staticmethod
+    def _stringify_result(result: Any) -> str:
+        """Convert structured command results into a human-readable string."""
+        if result is None:
+            return ""
+
+        if isinstance(result, (dict, list)):
+            try:
+                return json.dumps(result, indent=2, sort_keys=True)
+            except (TypeError, ValueError):
+                return str(result)
+
+        return str(result)

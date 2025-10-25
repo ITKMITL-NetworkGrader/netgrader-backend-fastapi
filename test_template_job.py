@@ -325,7 +325,44 @@ ROUTE_TEST_JOB = {
                 "parameters": {
                     "target_network": "0.0.0.0/0",
                     "expected_next_hop": "10.70.38.1",
-                    "boolean_value": True
+                },
+                "test_cases": [],
+                "points": 15
+            }
+        ],
+        "groups": []
+    },
+    "devices": [
+        {
+            "id": "router1",
+            "ip_address": "10.70.38.101",
+            "connection_type": "ssh",
+            "credentials": {
+                "username": "admin",
+                "password": "cisco"
+            },
+            "platform": "cisco_ios",
+            "role": "direct"
+        }
+    ],
+    "ip_mappings": {}
+}
+
+DHCP_TEST_JOB = {
+    "job_id": "test_dhcp",
+    "student_id": "student_test",
+    "lab_id": "dhcp_test_lab",
+    "part": {
+        "part_id": "part1",
+        "title": "DHCP Data Verification",
+        "network_tasks": [
+            {
+                "task_id": "check_dhcp_binding",
+                "name": "Check DHCP binding",
+                "template_name": "dhcp_binding",
+                "execution_device": "router1",
+                "parameters": {
+                    "expected_lease_ip": "172.40.117.34"
                 },
                 "test_cases": [],
                 "points": 15
@@ -423,7 +460,8 @@ async def main():
         # (LINUX_SERVICE_TEST_JOB, "Linux Service Health"),
         # (COMBINED_TEMPLATES_TEST_JOB, "Combined Templates"),
         # (VLAN_TEST_JOB, "VLAN NAPALM Get Test"),
-        (ROUTE_TEST_JOB, "Routing Validation Test"),
+        # (ROUTE_TEST_JOB, "Routing Validation Test"),
+        (DHCP_TEST_JOB , "DHCP Binding Test")
 
     ]
     

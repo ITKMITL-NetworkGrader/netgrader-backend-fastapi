@@ -1,0 +1,37 @@
+task_name: "dhcp_binding"
+description: "Validate DHCP binding table entries and verify lease information"
+connection_type: "netmiko"
+author: "NetGrader Team"
+version: "1.0.0"
+points: 10
+
+parameters:
+  - name: "expected_lease_ip"
+    datatype: "ip_address"
+    required: true
+    description: "Expected IP address that should be leased in the DHCP binding table"
+    example: "192.168.10.100"
+
+commands:
+  - name: "show_dhcp_binding"
+    action: "netmiko_send_command"
+    parameters:
+      command: "show ip dhcp binding"
+      use_textfsm: true
+    register: "binding_output"
+
+  - name: "parse_dhcp_binding"
+    action: "parse_output"
+    parameters:
+      parser: "jinja"
+      input: "{{binding_output}}"
+      template: |
+        {% set bindings = input.get('structured_output', []) %}
+        leased_ips: {{ bindings[0].ip_address if bindings | length > 0 else [] }}
+    register: "parsed_binding"
+
+validation:
+  - field: "parsed_binding.data.leased_ips"
+    condition: "equals"
+    value: "{{expected_lease_ip}}"
+    description: "Binding table should list the expected IP address"
