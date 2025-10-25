@@ -2,6 +2,7 @@
 Nornir Grading Service - Nornir-based network grading implementation
 """
 
+import json
 import logging
 import os
 import tempfile
@@ -10,6 +11,7 @@ import yaml
 from datetime import datetime
 from typing import Dict, Any, List, Optional
 from dataclasses import dataclass
+from pathlib import Path
 
 # Nornir imports
 from nornir import InitNornir
@@ -35,6 +37,7 @@ class NornirGradingService:
     def __init__(self):
         self.connection_manager = ConnectionManager()
         self._initialized = False
+        # self._ensure_textfsm_templates()
         
     async def add_device(self, device: SimpleDevice):
         """Add a device to the grader via connection manager"""
@@ -313,6 +316,8 @@ class NornirGradingService:
         execution_mode = parameters.get("execution_mode", ExecutionMode.ISOLATED)
         session_id = parameters.get("stateful_session_id")
         connection_timeout = parameters.get("connection_timeout", 30)
+        use_textfsm = parameters.get("use_textfsm", False)
+        textfsm_template = parameters.get("textfsm_template")
         
         # Convert execution mode
         connection_mode = self._convert_execution_mode(execution_mode)
@@ -329,24 +334,52 @@ class NornirGradingService:
                 device_nr = self.connection_manager.get_filtered_nornir(context, device_id)
                 
                 # Execute command via netmiko
+                netmiko_kwargs = {
+                    "command_string": command,
+                    "name": f"command_{command[:20]}"
+                }
+                if use_textfsm:
+                    netmiko_kwargs["use_textfsm"] = True
+                if textfsm_template:
+                    netmiko_kwargs["textfsm_template"] = textfsm_template
                 result = device_nr.run(
                     task=netmiko_send_command,
-                    command_string=command,
-                    name=f"command_{command[:20]}"
+                    **netmiko_kwargs
                 )
-                
                 # Analyze results
                 device_result = result[device_id]
                 success = not device_result.failed
                 
+                raw_output = None
+                if hasattr(device_result, "result"):
+                    raw_output = device_result.result if isinstance(device_result.result, str) else None
+
+                command_output = device_result.result if hasattr(device_result, 'result') else str(device_result)
+                structured_output = command_output if isinstance(command_output, (list, dict)) else None
+                if isinstance(command_output, str):
+                    stdout_text = command_output
+                else:
+                    try:
+                        stdout_text = json.dumps(command_output, indent=2, sort_keys=True)
+                    except (TypeError, ValueError):
+                        stdout_text = str(command_output)
+
+                debug_info: Optional[Dict[str, Any]] = None
+                if structured_output is not None or raw_output is not None:
+                    debug_info = {
+                        "structured_output": structured_output,
+                        "raw_output": raw_output,
+                    }
+
                 return TaskResult(
                     task_id=task_id,
                     status=TaskStatus.PASSED if success else TaskStatus.FAILED,
-                    stdout=device_result.result if hasattr(device_result, 'result') else str(device_result),
+                    stdout=stdout_text,
                     stderr=str(device_result.exception) if device_result.failed else "",
                     execution_time=time.time() - start_time,
                     points_earned=points if success else 0,
-                    points_possible=points
+                    points_possible=points,
+                    debug_info=debug_info
                 )
             
         except Exception as e:

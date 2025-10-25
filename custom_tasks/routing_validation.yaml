@@ -36,12 +36,15 @@ commands:
   - name: "parse_next_hop"
     action: "parse_output"
     parameters:
+      parser: "jinja"
       input: "{{routing_data}}"
-      pattern: "['\"]next_hop['\"]:\\s*['\"]{{expected_next_hop}}['\"]"
-    register: "next_hop_ips"
+      template: |
+        {% set entries = (input.get(parameters.target_network) or []) | map(attribute='next_hop') | list %}
+        next_hop: {{ entries[0] if entries else None }}
+    register: "next_hop_details"
 
 validation:
-  - field: "next_hop_ips.first_match"
-    condition: "contains"
+  - field: "next_hop_details.data.next_hop"
+    condition: "equals"
     value: "{{expected_next_hop}}"
-    description: "The first next-hop entry should match the expected value"
+    description: "Next-hop should be the expected value"
