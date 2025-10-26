@@ -21,8 +21,7 @@ parameters:
     example: "100"
 
 debug:
-  custom_debug_points:
-    - "configured"
+  show_registered_variables: true
 
 commands:
   - name: "get_vlan_data"
@@ -35,11 +34,14 @@ commands:
     action: "parse_output"
     parameters:
       input: "{{vlan_data}}"
-      pattern: "'{{expected_vlan_id}}':\\s*\\{[^}]*?'interfaces':\\s*\\[[^\\]]*?'{{interface_name}}'[^\\]]*\\]"
-    register: "configured"
+      parser: "jinja"
+      template: |
+        {% set cfg = input.get(parameters.expected_vlan_id|string) %}
+        is_configured: {{ parameters.interface_name in (cfg.interfaces if cfg else []) }}
+    register: "parsed_vlan_check"
 
 validation:
-  - field: "configured.match_count"
-    condition: "greater_than"
-    value: 0
+  - field: "parsed_vlan_check.data.is_configured"
+    condition: "equals"
+    value: true
     description: "Expected VLAN ID should be configured on the specified interface"

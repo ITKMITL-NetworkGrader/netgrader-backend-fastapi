@@ -281,7 +281,7 @@ VLAN_TEST_JOB = {
             {
                 "task_id": "check_vlan_data",
                 "name": "Check VLAN data",
-                "template_name": "vlan_napalm_get",
+                "template_name": "vlan_validation",
                 "execution_device": "switch1",
                 "parameters": {
                     "interface_name": "GigabitEthernet0/1",
@@ -296,7 +296,7 @@ VLAN_TEST_JOB = {
     "devices": [
         {
             "id": "switch1",
-            "ip_address": "172.40.210.190",
+            "ip_address": "172.40.210.178",
             "connection_type": "ssh",
             "credentials": {
                 "username": "admin",
@@ -459,9 +459,9 @@ async def main():
         # (INTERFACE_STATUS_TEST_JOB, "Interface Status Check"),
         # (LINUX_SERVICE_TEST_JOB, "Linux Service Health"),
         # (COMBINED_TEMPLATES_TEST_JOB, "Combined Templates"),
-        # (VLAN_TEST_JOB, "VLAN NAPALM Get Test"),
+        (VLAN_TEST_JOB, "VLAN NAPALM Get Test"),
         # (ROUTE_TEST_JOB, "Routing Validation Test"),
-        (DHCP_TEST_JOB , "DHCP Binding Test")
+        # (DHCP_TEST_JOB , "DHCP Binding Test")
 
     ]
     
