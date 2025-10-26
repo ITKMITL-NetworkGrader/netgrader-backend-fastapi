@@ -369,18 +369,37 @@ class NornirGradingService:
         session_id = parameters.get("stateful_session_id")
         connection_timeout = parameters.get("connection_timeout", 30)
 
-        # Collect additional kwargs for napalm_get (e.g., destination for get_route_to)
-        napalm_kwargs = {
-            key: value
-            for key, value in parameters.items()
-            if key not in {
-                "operation",
-                "points",
-                "execution_mode",
-                "stateful_session_id",
-                "connection_timeout"
-            }
+        excluded_keys = {
+            "operation",
+            "points",
+            "execution_mode",
+            "stateful_session_id",
+            "connection_timeout",
+            "getter"
         }
+
+        allowed_params_map = {
+            "get_interfaces": set(),
+            "get_interfaces_ip": set(),
+            "get_facts": set(),
+            "get_arp_table": {"vrf"},
+            "get_route_to": {"destination", "protocol", "vrf"},
+            "get_bgp_neighbors_detail": {"neighbor_address", "vrf"},
+        }
+
+        allowed_keys = allowed_params_map.get(operation)
+        if allowed_keys is not None:
+            napalm_kwargs = {
+                key: value
+                for key, value in parameters.items()
+                if key in allowed_keys
+            }
+        else:
+            napalm_kwargs = {
+                key: value
+                for key, value in parameters.items()
+                if key not in excluded_keys
+            }
         
         # Convert execution mode
         connection_mode = self._convert_execution_mode(execution_mode)
