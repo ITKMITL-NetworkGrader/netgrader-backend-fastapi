@@ -20,8 +20,8 @@ parameters:
     required: true
     example: "100"
 
-debug:
-  show_registered_variables: true
+# debug:
+#   show_registered_variables: true
 
 commands:
   - name: "get_vlan_data"
