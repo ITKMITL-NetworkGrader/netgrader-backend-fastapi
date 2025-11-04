@@ -5,7 +5,7 @@ WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
-    NTC_TEMPLATES_DIR=/opt/ntc_templates/templates
+    NTC_TEMPLATES_DIR=/usr/local/lib/python3.13/site-packages/ntc_templates/templates
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -21,11 +21,11 @@ RUN apt-get update \
 COPY requirements.txt .
 
 RUN pip install --upgrade pip \
-    && pip install --no-cache-dir -r requirements.txt
+    && pip install --no-cache-dir -r requirements.txt \
+    && mkdir -p /usr/local/lib/python3.13/site-packages/ntc_templates/templates
 
-# Copy custom NTC templates bundled with the project
-RUN mkdir -p /opt/ntc_templates/templates
-COPY ntc-template/ /opt/ntc_templates/templates/
+# Copy custom NTC templates into the site-packages path used by ntc_templates
+COPY ntc-template/ /usr/local/lib/python3.13/site-packages/ntc_templates/templates/
 
 COPY app ./app
 COPY custom_tasks ./custom_tasks
