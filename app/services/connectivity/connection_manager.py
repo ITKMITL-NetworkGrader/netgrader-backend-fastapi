@@ -20,20 +20,17 @@ from nornir import InitNornir
 from nornir.core.inventory import Inventory
 from nornir.core.task import Task, Result
 
-from app.services.grading.network_grader import Device as SimpleDevice
+from app.schemas.models import Device, ExecutionMode
 
 logger = logging.getLogger(__name__)
 
-class ConnectionMode(str, Enum):
-    ISOLATED = "isolated"     # Fresh connection for each task
-    STATEFUL = "stateful"     # Persistent connection across tasks in sequence
-    SHARED = "shared"         # Shared connection pool for device
+
 
 @dataclass
 class ConnectionContext:
     """Context information for a connection session"""
     device_id: str
-    connection_mode: ConnectionMode
+    connection_mode: ExecutionMode
     session_id: str
     start_time: float
     nr_instance: Optional[InitNornir] = None
@@ -54,27 +51,28 @@ class ConnectionManager:
     """
     
     def __init__(self):
-        self.devices: Dict[str, SimpleDevice] = {}
+        self.devices: Dict[str, Device] = {}
         self.device_groups: Dict[str, List[str]] = {}
         self._active_connections: Dict[str, ConnectionContext] = {}
         self._connection_counter = 0
         self._shared_nr_instance: Optional[InitNornir] = None
         self._shared_temp_dir: Optional[str] = None
         
-    async def add_device(self, device: SimpleDevice):
+    async def add_device(self, device: Device):
         """Add a device to the connection manager"""
         self.devices[device.id] = device
-        logger.info(f"Added device to connection manager: {device.id} ({device.ip_address}) - {device.device_type}")
+        device_type = device.platform or "generic"
+        logger.info(f"Added device to connection manager: {device.id} ({device.ip_address}) - {device_type}")
         
         # Categorize device into groups based on device_type
-        if "cisco" in device.device_type.lower():
-            if "router" in device.device_type.lower():
+        if "cisco" in device_type.lower():
+            if "router" in device_type.lower():
                 group = "cisco_routers"
-            elif "switch" in device.device_type.lower():
+            elif "switch" in device_type.lower():
                 group = "cisco_switches"
             else:
                 group = "cisco_devices"
-        elif "linux" in device.device_type.lower():
+        elif "linux" in device_type.lower():
             group = "linux_servers"
         else:
             group = "generic_devices"
@@ -102,23 +100,61 @@ class ConnectionManager:
             device = self.devices[device_id]
             
             # Determine platform for connection options
-            if "cisco" in device.device_type.lower():
+            device_type = device.platform or "generic"
+            if "cisco" in device_type.lower():
                 platform = "ios"
-            elif "linux" in device.device_type.lower():
+            elif "linux" in device_type.lower():
                 platform = "linux"
             else:
                 platform = "generic"
             
+            # Determine netmiko device type
+            netmiko_device_type = device_type
+            if netmiko_device_type in ["cisco", "cisco_router", "cisco_switch"]:
+                netmiko_device_type = "cisco_ios"
+            elif netmiko_device_type == "linux_server":
+                netmiko_device_type = "linux"
+            elif netmiko_device_type == "linux_telnet":
+                netmiko_device_type = "generic_telnet"
+            # Determine NAPALM transport
+            napalm_transport = "ssh"
+            if "telnet" in device.connection_type.lower() or "telnet" in netmiko_device_type.lower():
+                napalm_transport = "telnet"
+
             host_config = {
                 'hostname': device.ip_address,
-                'username': device.username,
-                'password': device.password,
+                'port': device.port,
+                'username': device.credentials.get("username", ""),
+                'password': device.credentials.get("password", ""),
                 'platform': platform,
                 'groups': [],
                 'data': {
                     'is_localhost': device.ip_address in ["localhost", "127.0.0.1"] or device.ip_address.startswith("127.")
+                },
+                'connection_options': {
+                    'netmiko': {
+                        'extras': {
+                            'device_type': netmiko_device_type
+                        }
+                    },
+                    'napalm': {
+                        'extras': {
+                            'optional_args': {
+                                'transport': napalm_transport
+                            }
+                        }
+                    }
                 }
             }
+
+            # Fallback to generic driver for NAPALM if using Telnet
+            # Many NAPALM drivers (like ios) assume SSH by default or have limited Telnet support
+            # This forces the use of the generic driver which might handle basic CLI interaction better via Netmiko
+            if napalm_transport == "telnet" and platform == "ios":
+                 # We keep platform='ios' for Netmiko but for NAPALM we might need to be careful
+                 # Actually, napalm-ios supports telnet via optional_args, so we keep it as is.
+                 # But we ensure the driver name is correct.
+                 pass
             
             # Add to appropriate groups
             for group, device_ids in self.device_groups.items():
@@ -155,7 +191,12 @@ class ConnectionManager:
                         },
                         'napalm': {
                             'driver': 'ios',
-                            'timeout': 30
+                            'timeout': 30,
+                            'extras': {
+                                'optional_args': {
+                                    'transport': 'telnet'
+                                }
+                            }
                         }
                     }
                 }
@@ -228,7 +269,7 @@ class ConnectionManager:
         return config_file, temp_dir
     
     @asynccontextmanager
-    async def get_connection(self, device_id: str, connection_mode: ConnectionMode = ConnectionMode.ISOLATED, session_id: Optional[str] = None):
+    async def get_connection(self, device_id: str, connection_mode: ExecutionMode = ExecutionMode.ISOLATED, session_id: Optional[str] = None):
         """
         Get a connection context for executing tasks.
         
@@ -251,7 +292,7 @@ class ConnectionManager:
         
         try:
             # Check for existing connection in stateful/shared modes
-            if connection_mode in [ConnectionMode.STATEFUL, ConnectionMode.SHARED]:
+            if connection_mode in [ExecutionMode.STATEFUL, ExecutionMode.SHARED]:
                 if context_key in self._active_connections:
                     context = self._active_connections[context_key]
                     logger.debug(f"Reusing {connection_mode.value} connection for {device_id} (session: {session_id})")
@@ -261,14 +302,14 @@ class ConnectionManager:
             # Create new connection
             logger.debug(f"Creating {connection_mode.value} connection for {device_id} (session: {session_id})")
             
-            if connection_mode == ConnectionMode.SHARED and self._shared_nr_instance:
+            if connection_mode == ExecutionMode.SHARED and self._shared_nr_instance:
                 # Use shared instance
                 nr_instance = self._shared_nr_instance
                 temp_dir = self._shared_temp_dir
                 logger.debug(f"Using shared Nornir instance for {device_id}")
             else:
                 # Determine which devices to include in inventory
-                if connection_mode == ConnectionMode.SHARED:
+                if connection_mode == ExecutionMode.SHARED:
                     # For SHARED mode, create inventory with ALL devices
                     devices_for_inventory = list(self.devices.keys())
                     logger.debug(f"Creating shared inventory with all devices: {devices_for_inventory}")
@@ -280,7 +321,7 @@ class ConnectionManager:
                 nr_instance = InitNornir(config_file=config_file)
                 
                 # For shared mode, store the instance for reuse
-                if connection_mode == ConnectionMode.SHARED:
+                if connection_mode == ExecutionMode.SHARED:
                     self._shared_nr_instance = nr_instance
                     self._shared_temp_dir = temp_dir
             
@@ -295,7 +336,7 @@ class ConnectionManager:
             )
             
             # Store context for stateful/shared modes
-            if connection_mode in [ConnectionMode.STATEFUL, ConnectionMode.SHARED]:
+            if connection_mode in [ExecutionMode.STATEFUL, ExecutionMode.SHARED]:
                 self._active_connections[context_key] = context
             
             logger.debug(f"Connection established for {device_id} ({connection_mode.value}) in {time.time() - start_time:.2f}s")
@@ -306,7 +347,7 @@ class ConnectionManager:
             raise
         finally:
             # Cleanup for isolated connections
-            if connection_mode == ConnectionMode.ISOLATED:
+            if connection_mode == ExecutionMode.ISOLATED:
                 await self._cleanup_connection(context_key, context if 'context' in locals() else None)
     
     async def close_stateful_connection(self, device_id: str, session_id: str):
@@ -323,7 +364,7 @@ class ConnectionManager:
             if context_key in self._active_connections:
                 del self._active_connections[context_key]
             
-            if context and context.temp_dir and context.connection_mode != ConnectionMode.SHARED:
+            if context and context.temp_dir and context.connection_mode != ExecutionMode.SHARED:
                 # Don't cleanup shared temp directory
                 if os.path.exists(context.temp_dir):
                     import shutil

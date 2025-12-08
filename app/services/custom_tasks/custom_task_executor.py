@@ -27,7 +27,7 @@ from .custom_task_registry import (
     CustomTaskValidationCondition,
     CustomTaskRegistry
 )
-from app.services.grading.network_grader import TaskResult, TaskStatus
+from app.schemas.models import TaskStatus
 
 logger = logging.getLogger(__name__)
 

@@ -10,13 +10,12 @@ import time
 from datetime import datetime
 from typing import Dict, Any
 # Import existing models and services
-from app.schemas.models import GradingJob, TestResult, GradingResult, Device, NetworkTask, ProgressUpdate, DebugInfo, TaskGroup, GroupResult
+from app.schemas.models import GradingJob, TestResult, GradingResult, Device, NetworkTask, ProgressUpdate, DebugInfo, TaskGroup, GroupResult, TaskResult, TaskStatus, ConnectionType
 from app.services.connectivity.api_client import APIClient as ApiClient
 from app.services.grading.scoring_service import ScoringService
 
 # Import our working components
 from .nornir_grading_service import NornirGradingService
-from .network_grader import Device as SimpleDevice, TaskResult, TaskStatus
 from app.services.connectivity.snmp_detection import DeviceDetectionService
 from app.services.custom_tasks.custom_task_registry import CustomTaskRegistry
 from app.core.config import config
@@ -60,8 +59,8 @@ class SimpleGradingService:
         self._initialized = True
         logger.info("Nornir Grading Service initialized successfully")
     
-    def _convert_device(self, device: Device, detection_results: Dict[str, Any] = None) -> SimpleDevice:
-        """Convert FastAPI Device model to SimpleDevice with detection results"""
+    def _convert_device(self, device: Device, detection_results: Dict[str, Any] = None) -> Device:
+        """Convert FastAPI Device model to Device with detection results"""
         
         # Determine device_type using detection results or fallback to platform
         device_type = "linux"  # Default
@@ -80,17 +79,25 @@ class SimpleGradingService:
         
         # Fallback to platform-based detection if no detection results
         if device_type == "linux" and device.platform:
-            if "ios" in device.platform.lower():
+            if "telnet" in device.platform.lower():
+                device_type = device.platform
+            elif "ios" in device.platform.lower():
                 device_type = "cisco_router"
             elif "linux" in device.platform.lower():
                 device_type = "linux_server"
+            else:
+                device_type = device.platform
         
-        return SimpleDevice(
+        return Device(
             id=device.id,
             ip_address=device.ip_address,
-            username=device.credentials.get("username", "admin"),
-            password=device.credentials.get("password", ""),
-            device_type=device_type
+            credentials={
+                "username": device.credentials.get("username", "admin"),
+                "password": device.credentials.get("password", "")
+            },
+            platform=device_type,
+            port=device.port if device.port else 22,
+            connection_type=device.connection_type
         )
     
     def _convert_task_result(self, task_result: TaskResult, task: NetworkTask) -> TestResult:
@@ -483,7 +490,7 @@ class SimpleGradingService:
         test_result = self._convert_task_result(task_result, task)
         
         # Log task result
-        from .network_grader import TaskStatus
+
         status_emoji = "✅" if task_result.status == TaskStatus.PASSED else ("❌" if task_result.status == TaskStatus.FAILED else "⚠️")
         group_suffix = f" (Group: {group_name})" if group_name else ""
         logger.info(f"{status_emoji} {task.task_id}: {task_result.status.value} ({task_result.points_earned}/{task.points} pts){group_suffix}")
@@ -629,12 +636,12 @@ class SimpleGradingService:
         connectivity = {}
         
         # Add a localhost device for testing
-        localhost = SimpleDevice(
+        localhost = Device(
             id="test_localhost",
             ip_address="localhost",
-            username="test",
-            password="test",
-            device_type="linux"
+            credentials={"username": "test", "password": "test"},
+            platform="linux",
+            connection_type=ConnectionType.LOCAL
         )
         await self.grader.add_device(localhost)
         

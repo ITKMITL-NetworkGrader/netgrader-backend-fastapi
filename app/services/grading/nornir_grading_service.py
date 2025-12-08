@@ -22,9 +22,9 @@ from nornir_napalm.plugins.tasks import napalm_get
 from nornir_utils.plugins.functions import print_result
 
 # Import our existing models and new connection manager
-from .network_grader import Device as SimpleDevice, TaskResult, TaskStatus
-from app.services.connectivity.connection_manager import ConnectionManager, ConnectionMode
-from app.schemas.models import ExecutionMode
+# Import our existing models and new connection manager
+from app.services.connectivity.connection_manager import ConnectionManager
+from app.schemas.models import ExecutionMode, Device, TaskResult, TaskStatus
 
 logger = logging.getLogger(__name__)
 
@@ -39,19 +39,12 @@ class NornirGradingService:
         self._initialized = False
         # self._ensure_textfsm_templates()
         
-    async def add_device(self, device: SimpleDevice):
+    async def add_device(self, device: Device):
         """Add a device to the grader via connection manager"""
         await self.connection_manager.add_device(device)
-        logger.info(f"Added device: {device.id} ({device.ip_address}) - {device.device_type}")
+        logger.info(f"Added device: {device.id} ({device.ip_address}) - {device.platform}")
     
-    def _convert_execution_mode(self, execution_mode: ExecutionMode) -> ConnectionMode:
-        """Convert ExecutionMode to ConnectionMode"""
-        mode_mapping = {
-            ExecutionMode.ISOLATED: ConnectionMode.ISOLATED,
-            ExecutionMode.STATEFUL: ConnectionMode.STATEFUL,
-            ExecutionMode.SHARED: ConnectionMode.SHARED
-        }
-        return mode_mapping.get(execution_mode, ConnectionMode.ISOLATED)
+
         
     async def execute_ping_task(self, task_id: str, device_id: str, parameters: Dict[str, Any]) -> TaskResult:
         """Execute ping task using nornir-netmiko with connection isolation"""
@@ -63,8 +56,8 @@ class NornirGradingService:
         session_id = parameters.get("stateful_session_id")
         connection_timeout = parameters.get("connection_timeout", 30)
         
-        # Convert execution mode
-        connection_mode = self._convert_execution_mode(execution_mode)
+        # Use execution mode directly
+        connection_mode = execution_mode
         
         try:
             # Check if this is a localhost device first
@@ -177,8 +170,8 @@ class NornirGradingService:
         session_id = parameters.get("stateful_session_id")
         connection_timeout = parameters.get("connection_timeout", 30)
         
-        # Convert execution mode
-        connection_mode = self._convert_execution_mode(execution_mode)
+        # Use execution mode directly
+        connection_mode = execution_mode
         
         try:
             # Use connection manager for isolated connection
@@ -319,8 +312,8 @@ class NornirGradingService:
         use_textfsm = parameters.get("use_textfsm", False)
         textfsm_template = parameters.get("textfsm_template")
         
-        # Convert execution mode
-        connection_mode = self._convert_execution_mode(execution_mode)
+        # Use execution mode directly
+        connection_mode = execution_mode
         
         try:
             # Use connection manager for isolated connection
@@ -434,8 +427,8 @@ class NornirGradingService:
                 if key not in excluded_keys
             }
         
-        # Convert execution mode
-        connection_mode = self._convert_execution_mode(execution_mode)
+        # Use execution mode directly
+        connection_mode = execution_mode
         
         try:
             # Use connection manager for isolated connection

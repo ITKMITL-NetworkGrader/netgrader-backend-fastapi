@@ -12,9 +12,26 @@ class ConnectionType(str, Enum):
     SSH = "ssh"
     LOCAL = "local"
 
+class TaskStatus(str, Enum):
+    PASSED = "passed"
+    FAILED = "failed"
+    ERROR = "error"
+
+class TaskResult(BaseModel):
+    """Internal task execution result"""
+    task_id: str
+    status: TaskStatus
+    stdout: str = ""
+    stderr: str = ""
+    execution_time: float = 0.0
+    points_earned: int = 0
+    points_possible: int = 10
+    debug_info: Optional[Dict[str, Any]] = None
+
 class Device(BaseModel):
     id: str
     ip_address: str
+    port: Optional[int] = 22
     connection_type: str
     credentials: Dict[str, str] = Field(default_factory=dict)
     platform: Optional[str] = None
