@@ -98,7 +98,6 @@ class ConnectionManager:
                 continue
                 
             device = self.devices[device_id]
-            
             # Determine platform for connection options
             device_type = device.platform or "generic"
             if "cisco" in device_type.lower():
@@ -120,7 +119,6 @@ class ConnectionManager:
             napalm_transport = "ssh"
             if "telnet" in device.connection_type.lower() or "telnet" in netmiko_device_type.lower():
                 napalm_transport = "telnet"
-
             host_config = {
                 'hostname': device.ip_address,
                 'port': device.port,
@@ -129,7 +127,8 @@ class ConnectionManager:
                 'platform': platform,
                 'groups': [],
                 'data': {
-                    'is_localhost': device.ip_address in ["localhost", "127.0.0.1"] or device.ip_address.startswith("127.")
+                    'is_localhost': device.ip_address in ["localhost", "127.0.0.1"] or device.ip_address.startswith("127."),
+                    'device_os': device.device_os  # Add device_os for parsing
                 },
                 'connection_options': {
                     'netmiko': {

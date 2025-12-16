@@ -35,6 +35,7 @@ class Device(BaseModel):
     connection_type: str
     credentials: Dict[str, str] = Field(default_factory=dict)
     platform: Optional[str] = None
+    device_os: Optional[str] = Field(None, description="Actual device OS for parsing (e.g., 'cisco_ios', 'linux'). If None, derived from platform.")
     jump_host: Optional[str] = Field(None, description="Jump host device ID for proxy connections")
     ssh_args: Optional[str] = Field(None, description="Custom SSH arguments for connection")
     use_persistent_connection: Optional[bool] = Field(False, description="Use persistent connection through jump host")

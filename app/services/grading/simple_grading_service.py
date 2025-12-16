@@ -96,6 +96,7 @@ class SimpleGradingService:
                 "password": device.credentials.get("password", "")
             },
             platform=device_type,
+            device_os=device.device_os,  # Preserve device_os field
             port=device.port if device.port else 22,
             connection_type=device.connection_type
         )

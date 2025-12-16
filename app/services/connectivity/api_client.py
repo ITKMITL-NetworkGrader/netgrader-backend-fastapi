@@ -43,12 +43,11 @@ class APIClient:
         if not callback_url:
             logger.warning("No callback URL provided for final result")
             return False
-        import json
-        print(json.dumps(result.model_dump(), indent=2))
+        # import json
+        # print(json.dumps(result.model_dump(), indent=2))
         for attempt in range(self.max_retries):
             try:
                 async with httpx.AsyncClient(timeout=self.timeout) as client:
-                    print(f"{callback_url}/result")
                     response = await client.post(
                         f"{callback_url}/result",
                         json=result.model_dump(),

@@ -12,6 +12,8 @@ from datetime import datetime
 from typing import Dict, Any, List, Optional
 from dataclasses import dataclass
 from pathlib import Path
+import re
+from ntc_templates.parse import parse_output
 
 # Nornir imports
 from nornir import InitNornir
@@ -27,6 +29,21 @@ from app.services.connectivity.connection_manager import ConnectionManager
 from app.schemas.models import ExecutionMode, Device, TaskResult, TaskStatus
 
 logger = logging.getLogger(__name__)
+
+def netmiko_send_command_timing(task: Task, command_string: str, last_read: float = 2.0, **kwargs) -> Result:
+    """
+    Execute send_command_timing using the underlying Netmiko connection.
+    Useful for Telnet devices or commands where prompt detection is difficult.
+    """
+    # Get the Netmiko connection object
+    net_connect = task.host.get_connection("netmiko", task.nornir.config)
+    
+    # Execute the command using timing
+    # Filter out kwargs that send_command_timing doesn't accept if necessary, 
+    # but netmiko usually handles kwargs well.
+    output = net_connect.send_command_timing(command_string, last_read=last_read, **kwargs)
+    
+    return Result(host=task.host, result=output)
 
 class NornirGradingService:
     """
@@ -306,15 +323,13 @@ class NornirGradingService:
         start_time = time.time()
         command = parameters.get("command")
         points = parameters.get("points", 10)
-        execution_mode = parameters.get("execution_mode", ExecutionMode.ISOLATED)
+        connection_mode = parameters.get("execution_mode", ExecutionMode.ISOLATED)
         session_id = parameters.get("stateful_session_id")
         connection_timeout = parameters.get("connection_timeout", 30)
         use_textfsm = parameters.get("use_textfsm", False)
         textfsm_template = parameters.get("textfsm_template")
-        
-        # Use execution mode directly
-        connection_mode = execution_mode
-        
+        last_read = parameters.get("last_read") # New parameter for timing tasks
+
         try:
             # Use connection manager for isolated connection
             async with self.connection_manager.get_connection(
@@ -329,14 +344,34 @@ class NornirGradingService:
                 # Execute command via netmiko
                 netmiko_kwargs = {
                     "command_string": command,
-                    "name": f"command_{command[:20]}"
+                    "name": f"command_{command[:20]}",
                 }
+                
+                # Check platform for special handling
+                device_host = device_nr.inventory.hosts[device_id]
+                device_type = device_host.connection_options.get("netmiko").extras.get("device_type")
+                # Determine which task to run
+                task_to_run = netmiko_send_command
+                if last_read is not None:
+                    netmiko_kwargs["last_read"] = float(last_read)
+                    task_to_run = netmiko_send_command_timing
+                
+                # Force timing-based execution for generic_termserver_telnet if not explicitly set
+                if device_type == "generic_termserver_telnet":
+                    if last_read is None:
+                        last_read = 2.0
+                        task_to_run = netmiko_send_command_timing
+                        netmiko_kwargs["last_read"] = float(last_read)
+
                 if use_textfsm:
-                    netmiko_kwargs["use_textfsm"] = True
+                    # For generic_termserver_telnet, we handle parsing manually after cleaning
+                    if device_type not in ["generic_termserver_telnet"]:
+                        netmiko_kwargs["use_textfsm"] = True
                 if textfsm_template:
                     netmiko_kwargs["textfsm_template"] = textfsm_template
+
                 result = device_nr.run(
-                    task=netmiko_send_command,
+                    task=task_to_run,
                     **netmiko_kwargs
                 )
                 # Analyze results
@@ -345,8 +380,44 @@ class NornirGradingService:
                 
                 raw_output = None
                 if hasattr(device_result, "result"):
-                    raw_output = device_result.result if isinstance(device_result.result, str) else None
-
+                    if isinstance(device_result.result, str) and device_type == "generic_termserver_telnet":
+                        # 1. Remove ANSI escape sequences (CSI, OSC)
+                        # CSI: \x1B\[[0-?]*[ -/]*[@-~]
+                        # OSC: \x1B\].*?\x07
+                        ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+                        output = ansi_escape.sub('', device_result.result)
+                        
+                        # 2. Remove other control characters (keep newlines and tabs)
+                        # Remove characters in range \x00-\x08, \x0b-\x1f, \x7f-\x9f
+                        control_chars = re.compile(r'[\x00-\x08\x0b-\x1f\x7f-\x9f]')
+                        output = control_chars.sub('', output)
+                        
+                        # 3. Filter out lines that look like prompts
+                        lines = [line for line in output.splitlines() if not ('#' in line.strip())]
+                        
+                        clean_output = "\n".join(lines).strip()
+                        parsed_data = []
+                        try:
+                            # Determine the actual device OS for parsing
+                            # First, check if device_os is specified in the host data
+                            device_os = device_host.data.get("device_os") if hasattr(device_host, 'data') else None
+                            if clean_output and (use_textfsm or textfsm_template):
+                                parsed_data = parse_output(platform=device_os, command=command, data=clean_output)
+                        except Exception as e:
+                            logger.warning(f"Parsing failed for {device_id}: {e}")
+                            
+                        raw_output = parsed_data
+                        # Update the result to be the clean output for consistency
+                        device_result.result = clean_output
+                        
+                        # If we successfully parsed data, use it as the result for templates that expect structured data
+                        if parsed_data:
+                            device_result.result = parsed_data
+                    elif isinstance(device_result.result, str):
+                        raw_output = device_result.result
+                    else:
+                        raw_output = None
+                
                 command_output = device_result.result if hasattr(device_result, 'result') else str(device_result)
                 structured_output = command_output if isinstance(command_output, (list, dict)) else None
                 if isinstance(command_output, str):
