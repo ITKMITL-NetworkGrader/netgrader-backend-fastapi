@@ -69,6 +69,8 @@ class GradingJob(BaseModel):
     part: Part
     devices: List[Device]
     ip_mappings: Dict[str, str] = Field(default_factory=dict)
+    callback_url: Optional[str] = Field(None, description="Per-job callback URL override for playground jobs")
+
 
 class TestCaseResult(BaseModel):
     """Result of individual test case"""
