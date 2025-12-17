@@ -408,7 +408,7 @@ CONSOLE_TERMINAL_TEST_JOB = {
             {
                 "task_id": "check_console_terminal",
                 "name": "Check Console Terminal",
-                "template_name": "console_terminal",
+                "template_name": "console_terminal_test",
                 "execution_device": "test",
                 "parameters": {},
                 "test_cases": [],
