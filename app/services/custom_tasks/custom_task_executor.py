@@ -252,17 +252,16 @@ class CustomTaskExecutor:
     executes commands through appropriate Nornir methods, and validates results.
     """
     
-    def __init__(self, nornir_grading_service):
+    def __init__(self, nornir_grading_service, registry: CustomTaskRegistry = None):
         """
         Initialize the custom task executor
         
         Args:
             nornir_grading_service: Instance of NornirGradingService for command execution
+            registry: Pre-initialized CustomTaskRegistry instance (should be initialized with MinIO)
         """
-        from app.core.config import config
-        
         self.nornir_service = nornir_grading_service
-        self.registry = CustomTaskRegistry(config.CUSTOM_TASK_REGISTRY_DIR)
+        self.registry = registry
         self.validation_engine = CustomTaskValidationEngine()
         
     async def execute_custom_task(self, 

@@ -54,7 +54,16 @@ class NornirGradingService:
     def __init__(self):
         self.connection_manager = ConnectionManager()
         self._initialized = False
+        self._custom_task_registry = None  # Set externally after initialization
         # self._ensure_textfsm_templates()
+    
+    def set_custom_task_registry(self, registry):
+        """Set the custom task registry for custom task execution.
+        
+        Args:
+            registry: Pre-initialized CustomTaskRegistry instance
+        """
+        self._custom_task_registry = registry
         
     async def add_device(self, device: Device):
         """Add a device to the grader via connection manager"""
@@ -704,7 +713,7 @@ class NornirGradingService:
             
             # Create executor if not already exists
             if not hasattr(self, '_custom_executor'):
-                self._custom_executor = CustomTaskExecutor(self)
+                self._custom_executor = CustomTaskExecutor(self, registry=self._custom_task_registry)
             
             # Execute custom task
             custom_result = await self._custom_executor.execute_custom_task(

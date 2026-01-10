@@ -183,6 +183,40 @@ class MinioService:
         await asyncio.to_thread(client.fget_object, target_bucket, object_name, str(destination))
         return destination
 
+    async def download_data(
+        self,
+        object_name: str,
+        bucket_name: Optional[str] = None,
+    ) -> bytes:
+        """Download object content directly to memory.
+        
+        Args:
+            object_name: Name of the object to download
+            bucket_name: Optional bucket name, uses default if not provided
+            
+        Returns:
+            Object content as bytes
+            
+        Raises:
+            ValueError: If bucket name is not provided
+            S3Error: If object doesn't exist or other MinIO errors
+        """
+        target_bucket = bucket_name or self.bucket_name
+        if not target_bucket:
+            raise ValueError("Bucket name must be provided")
+
+        client = await self._ensure_client()
+        
+        def _download():
+            response = client.get_object(target_bucket, object_name)
+            try:
+                return response.read()
+            finally:
+                response.close()
+                response.release_conn()
+        
+        return await asyncio.to_thread(_download)
+
     async def generate_presigned_url(
         self,
         object_name: str,

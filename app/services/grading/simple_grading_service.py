@@ -17,6 +17,7 @@ from app.services.grading.scoring_service import ScoringService
 # Import our working components
 from .nornir_grading_service import NornirGradingService
 from app.services.connectivity.snmp_detection import DeviceDetectionService
+from app.services.connectivity.minio_service import MinioService
 from app.services.custom_tasks.custom_task_registry import CustomTaskRegistry
 from app.core.config import config
 
@@ -43,8 +44,17 @@ class SimpleGradingService:
         else:
             self.device_detector = None
         
-        # Initialize global task template registry
-        self.global_task_registry = CustomTaskRegistry(config.CUSTOM_TASK_REGISTRY_DIR)
+        # Initialize MinIO service for loading custom task templates
+        self._minio_service = MinioService(
+            bucket_name=config.MINIO_BUCKET_NAME,
+            auto_create_bucket=True
+        )
+        
+        # Initialize global task template registry (async initialization required)
+        self.global_task_registry = CustomTaskRegistry(
+            minio_service=self._minio_service,
+            bucket_name=config.MINIO_BUCKET_NAME
+        )
     
     async def initialize(self):
         """Initialize the grading service"""
@@ -52,6 +62,13 @@ class SimpleGradingService:
             return
         
         logger.info("Initializing Nornir Grading Service...")
+        
+        # Initialize global task template registry from MinIO
+        await self.global_task_registry.initialize()
+        logger.info(f"Loaded {len(self.global_task_registry.list_templates())} custom task templates from MinIO")
+        
+        # Set the registry on the grader for custom task execution
+        self.grader.set_custom_task_registry(self.global_task_registry)
         
         # Nornir grader will initialize when needed
         logger.info("Nornir grading service ready")
