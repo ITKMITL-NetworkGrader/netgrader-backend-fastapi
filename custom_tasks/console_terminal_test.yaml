@@ -16,21 +16,21 @@ debug:
   show_registered_variables: true 
 
 commands:
-  # - name: "prepare_1"
-  #   action: "netmiko_send_command"
-  #   parameters:
-  #     command: "\x03"
+  - name: "prepare_1"
+    action: "netmiko_send_command"
+    parameters:
+      command: "\x03"
   - name: "send_command"
     action: "netmiko_send_command"
     parameters:
-      command: "lscpu"
-      last_read: 1.0
-      # use_textfsm: true
+      command: "ping 10.70.38.1"
+      last_read: 2.0
+      use_textfsm: true
     register: "result"
-  - name: "parse_result_output"
-    action: "parse_output"
-    parameters:
-      parser: "textfsm"
-      input: "{{result}}"
-      template_path: "/home/nitruzx/netgrader2025/netgrader-backend-fastapi/textfsm-templates/testing_parser.textfsm"
-    register: "parsed_result"
+  # - name: "parse_result_output"
+  #   action: "parse_output"
+  #   parameters:
+  #     parser: "textfsm"
+  #     input: "{{result}}"
+  #     template_path: "/home/nitruzx/netgrader2025/netgrader-backend-fastapi/textfsm-templates/cisco_ios_show_ip_dhcp_binding.textfsm"
+  #   register: "parsed_result"

@@ -118,6 +118,68 @@ class SimpleGradingService:
             connection_type=device.connection_type
         )
     
+    def _format_error(self, raw_output: str) -> str:
+        """
+        Convert raw error messages to user-friendly format.
+        
+        Only transforms content that matches known error patterns.
+        Normal output is returned unchanged.
+        """
+        if not raw_output:
+            return raw_output
+        
+        error_lower = raw_output.lower()
+        
+        # Handle Netmiko ReadTimeout errors
+        if "readtimeout" in error_lower or "pattern not detected" in error_lower:
+            return "Connection timeout: The device did not respond within the expected time. This may indicate the device is unreachable, busy, or the command took too long to execute."
+        
+        # Handle authentication errors
+        if "authentication" in error_lower and ("failed" in error_lower or "error" in error_lower):
+            return "Authentication failed: Could not authenticate with the device. Please verify the credentials are correct."
+        
+        if "permission denied" in error_lower:
+            return "Authentication failed: Permission denied. Please verify the credentials are correct."
+        
+        # Handle connection refused errors
+        if "connection refused" in error_lower:
+            return "Connection refused: The device actively refused the connection. Please verify the device is reachable and the service is running on the expected port."
+        
+        # Handle timeout errors (general) - but not just any mention of "timeout"
+        if ("timeout" in error_lower or "timed out" in error_lower) and ("connection" in error_lower or "socket" in error_lower):
+            return "Connection timeout: Could not establish a connection to the device within the allowed time."
+        
+        # Handle SSH key errors
+        if "host key" in error_lower and ("verification" in error_lower or "failed" in error_lower or "error" in error_lower):
+            return "SSH key verification failed: Could not verify the device's SSH host key."
+        
+        # Handle unreachable host errors
+        if "no route to host" in error_lower or "host unreachable" in error_lower or "network unreachable" in error_lower:
+            return "Network error: The device is unreachable. Please verify network connectivity."
+        
+        # Handle name resolution errors
+        if "name or service not known" in error_lower or "could not resolve" in error_lower:
+            return "DNS error: Could not resolve the device hostname. Please verify the hostname is correct."
+        
+        # Handle command execution errors with tracebacks
+        if "traceback" in error_lower or "File \"" in raw_output:
+            # This looks like a Python traceback - provide clean message
+            if "readtimeout" in error_lower:
+                return "Connection timeout: The device did not respond within the expected time."
+            elif "authentication" in error_lower:
+                return "Authentication failed: Could not authenticate with the device."
+            elif "connection" in error_lower and "refused" in error_lower:
+                return "Connection refused: The device refused the connection."
+            else:
+                return "An unexpected error occurred during task execution. Please check the device connectivity and configuration."
+        
+        # Handle system paths in output (security concern)
+        if "/" in raw_output or "site-packages" in raw_output:
+            return "An unexpected error occurred during task execution. Please check the device connectivity and configuration."
+        
+        # No error pattern matched - return original output unchanged
+        return raw_output
+    
     def _convert_task_result(self, task_result: TaskResult, task: NetworkTask) -> TestResult:
         """Convert TaskResult to FastAPI TestResult model"""
         # Check if task_result has debug_info attribute (for custom tasks)
@@ -132,6 +194,10 @@ class SimpleGradingService:
                 validation_details=debug_data.get("validation_details"),
                 custom_debug_points=debug_data.get("custom_debug_points")
             )
+        # Format error messages to be user-friendly
+        formatted_stdout = self._format_error(task_result.stdout)
+        formatted_stderr = self._format_error(task_result.stderr)
+        formatted_message = formatted_stderr if formatted_stderr else "Task completed successfully"
         
         return TestResult(
             test_name=task.task_id,
@@ -139,15 +205,15 @@ class SimpleGradingService:
             points_earned=task_result.points_earned,
             points_possible=task_result.points_possible,
             execution_time=task_result.execution_time,
-            message=task_result.stderr if task_result.stderr else "Task completed successfully",
+            message=formatted_message,
             test_case_results=[],  # Empty list for now, can be enhanced later
             extracted_data={
-                "stdout": task_result.stdout,
-                "stderr": task_result.stderr,
+                "stdout": formatted_stdout,
+                "stderr": formatted_stderr,
                 "task_type": task.template_name,
                 "execution_device": task.execution_device
             },
-            raw_output=task_result.stdout,
+            raw_output=formatted_stdout,
             debug_info=debug_info,
             group_id=task.group_id
         )

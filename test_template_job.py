@@ -408,9 +408,12 @@ CONSOLE_TERMINAL_TEST_JOB = {
             {
                 "task_id": "check_console_terminal",
                 "name": "Check Console Terminal",
-                "template_name": "console_terminal_test",
+                "template_name": "linux_curl",
                 "execution_device": "test",
-                "parameters": {},
+                "parameters": {
+                    "target_domain": "google.com",
+                    "expected_result": "fail"
+                },
                 "test_cases": [],
                 "points": 15
             }
@@ -418,24 +421,24 @@ CONSOLE_TERMINAL_TEST_JOB = {
         "groups": []
     },
     "devices": [
-        # {
-        #     "id": "test",
-        #     "ip_address": "10.70.38.7",
-        #     "port": 5023,
-        #     "connection_type": "telnet",
-        #     "platform": "generic_termserver_telnet",
-        #     "device_os": "cisco_ios",
-        #     "role": "direct"
-        # },
         {
             "id": "test",
-            "ip_address": "10.70.38.7",
-            "port": 5058,
+            "ip_address": "10.70.38.8",
+            "port": 5004,
             "connection_type": "telnet",
             "platform": "generic_termserver_telnet",
             "device_os": "linux",
             "role": "direct"
-        }
+        },
+        # {
+        #     "id": "test",
+        #     "ip_address": "10.70.38.7",
+        #     "port": 5058,
+        #     "connection_type": "telnet",
+        #     "platform": "generic_termserver_telnet",
+        #     "device_os": "linux",
+        #     "role": "direct"
+        # }
         # {
         #     "id": "test",
         #     "ip_address": "10.70.38.101",
