@@ -27,7 +27,7 @@ class Device(BaseModel):
 
 class TestCase(BaseModel):
     """Individual test case with expected vs actual comparison"""
-    comparison_type: str = Field(..., description="Type of comparison: equals, contains, regex, success, ssh_success, greater_than")
+    comparison_type: str = Field(..., description="Type of comparison: equals, contains, regex, success, ssh_success, greater_than, ipv6_equals, ipv6_link_local, ipv6_valid")
     expected_result: Any = Field(..., description="Expected value/result for comparison")
 
 class NetworkTask(BaseModel):
