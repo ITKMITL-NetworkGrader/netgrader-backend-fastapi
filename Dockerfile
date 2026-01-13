@@ -25,7 +25,6 @@ RUN pip install --upgrade pip \
     && mkdir -p /usr/local/lib/python3.13/site-packages/ntc_templates/templates
 
 # Copy custom NTC templates into the site-packages path used by ntc_templates
-COPY ntc-template/ /usr/local/lib/python3.13/site-packages/ntc_templates/templates/
 
 COPY app ./app
 COPY custom_tasks ./custom_tasks
