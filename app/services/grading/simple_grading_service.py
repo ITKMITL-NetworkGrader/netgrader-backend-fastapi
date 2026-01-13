@@ -131,12 +131,17 @@ class SimpleGradingService:
         """Process a grading job using the simple plugin system"""
         start_time = time.time()
         
+        # Use per-job callback URL if provided (for playground jobs), otherwise fall back to global config
+        callback_url = job.callback_url if job.callback_url else self.callback_url
+        
         logger.info(f"Processing grading job: {job.job_id}")
         logger.info(f"Student: {job.student_id}, Lab: {job.lab_id}")
         logger.info(f"Part: {job.part.title}")
+        if job.callback_url:
+            logger.info(f"Using per-job callback URL: {callback_url}")
         
         # Send progress update
-        if self.callback_url:
+        if callback_url:
             try:
                 progress = ProgressUpdate(
                     job_id=job.job_id,
@@ -146,16 +151,17 @@ class SimpleGradingService:
                     total_tests=len(job.part.network_tasks),
                     percentage=0.0
                 )
-                await self.api_client.send_progress_update(self.callback_url, progress)
+                await self.api_client.send_progress_update(callback_url, progress)
             except Exception as e:
                 logger.warning(f"Failed to send progress update: {e}")
+
         
         # Run device detection for devices without platform info
         detection_results = {}
         devices_needing_detection = [d for d in job.devices if not d.platform or d.platform.lower() == 'unknown']
         if devices_needing_detection:
             logger.info(f"Running device detection for {len(devices_needing_detection)} devices without platform info")
-            if self.callback_url:
+            if callback_url:
                 try:
                     progress = ProgressUpdate(
                         job_id=job.job_id,
@@ -165,7 +171,7 @@ class SimpleGradingService:
                         total_tests=len(job.part.network_tasks),
                         percentage=5.0
                     )
-                    await self.api_client.send_progress_update(self.callback_url, progress)
+                    await self.api_client.send_progress_update(callback_url, progress)
                 except Exception as e:
                     logger.warning(f"Failed to send progress update: {e}")
             
@@ -219,7 +225,7 @@ class SimpleGradingService:
             logger.info(f"Processing task {task_index}/{total_tasks}: {task.task_id}")
             
             # Execute individual task
-            test_result = await self._execute_single_task(task, job, task_index, total_tasks)
+            test_result = await self._execute_single_task(task, job, task_index, total_tasks, callback_url=callback_url)
             test_results.append(test_result)
             
             total_points_possible += task.points
@@ -250,7 +256,7 @@ class SimpleGradingService:
                 logger.info(f"Processing group task {task_index}/{total_tasks}: {task.task_id}")
                 
                 # Execute task (but don't count individual points yet)
-                test_result = await self._execute_single_task(task, job, task_index, total_tasks, group_config.title)
+                test_result = await self._execute_single_task(task, job, task_index, total_tasks, group_config.title, callback_url=callback_url)
                 group_task_results.append(test_result)
                 test_results.append(test_result)
             
@@ -319,7 +325,7 @@ class SimpleGradingService:
         )
         
         # Send final result
-        if self.callback_url:
+        if callback_url:
             try:
                 # Send final progress update
                 progress = ProgressUpdate(
@@ -330,10 +336,10 @@ class SimpleGradingService:
                     total_tests=total_tasks,
                     percentage=100.0
                 )
-                await self.api_client.send_progress_update(self.callback_url, progress)
+                await self.api_client.send_progress_update(callback_url, progress)
                 
                 # Send final result
-                await self.api_client.send_final_result(self.callback_url, result)
+                await self.api_client.send_final_result(callback_url, result)
             except Exception as e:
                 logger.error(f"Failed to send final result: {e}")
         
@@ -418,12 +424,12 @@ class SimpleGradingService:
         
         return enhanced
     
-    async def _execute_single_task(self, task: NetworkTask, job: GradingJob, task_index: int, total_tasks: int, group_name: str = None) -> TestResult:
+    async def _execute_single_task(self, task: NetworkTask, job: GradingJob, task_index: int, total_tasks: int, group_name: str = None, callback_url: str = None) -> TestResult:
         """Execute a single task and return TestResult"""
         
         # Send progress update
         progress_value = (task_index / total_tasks) * 100.0
-        if self.callback_url:
+        if callback_url:
             try:
                 message = f"Executing task: {task.task_id}"
                 if group_name:
@@ -437,7 +443,7 @@ class SimpleGradingService:
                     total_tests=total_tasks,
                     percentage=progress_value
                 )
-                await self.api_client.send_progress_update(self.callback_url, progress)
+                await self.api_client.send_progress_update(callback_url, progress)
             except Exception as e:
                 logger.warning(f"Failed to send progress update: {e}")
         

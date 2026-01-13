@@ -7,6 +7,7 @@ import json
 import logging
 from typing import Any, Dict, List, Union
 from app.schemas.models import TestCase, TestCaseResult, NetworkTask, TaskGroup, TestResult, GroupResult
+from app.services.grading.ipv6_utils import compare_ipv6, is_link_local, is_valid_ipv6, compare_link_local
 
 logger = logging.getLogger(__name__)
 
@@ -213,6 +214,24 @@ class ScoringService:
                 # Expected should be boolean
                 passed = bool(actual) == bool(expected)
                 message = f"Expected SSH success: {expected}, Got: {actual}"
+            
+            elif comparison_type == "ipv6_equals":
+                # IPv6 address comparison (handles compressed and full forms)
+                passed = compare_ipv6(str(actual), str(expected))
+                if passed:
+                    message = f"IPv6 addresses match: {actual} == {expected}"
+                else:
+                    message = f"IPv6 addresses don't match: Expected {expected}, Got: {actual}"
+            
+            elif comparison_type == "ipv6_link_local":
+                # Check if address is a link-local IPv6 address (fe80::/10)
+                expect_link_local = bool(expected) if expected is not None else True
+                passed, message = compare_link_local(str(actual), expect_link_local)
+            
+            elif comparison_type == "ipv6_valid":
+                # Check if the value is a valid IPv6 address
+                passed = is_valid_ipv6(str(actual))
+                message = f"IPv6 validation: {actual} is {'valid' if passed else 'invalid'}"
                     
             else:
                 passed = False
