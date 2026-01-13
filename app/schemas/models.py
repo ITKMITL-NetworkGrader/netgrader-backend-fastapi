@@ -12,12 +12,30 @@ class ConnectionType(str, Enum):
     SSH = "ssh"
     LOCAL = "local"
 
+class TaskStatus(str, Enum):
+    PASSED = "passed"
+    FAILED = "failed"
+    ERROR = "error"
+
+class TaskResult(BaseModel):
+    """Internal task execution result"""
+    task_id: str
+    status: TaskStatus
+    stdout: str = ""
+    stderr: str = ""
+    execution_time: float = 0.0
+    points_earned: int = 0
+    points_possible: int = 10
+    debug_info: Optional[Dict[str, Any]] = None
+
 class Device(BaseModel):
     id: str
     ip_address: str
+    port: Optional[int] = 22
     connection_type: str
     credentials: Dict[str, str] = Field(default_factory=dict)
     platform: Optional[str] = None
+    device_os: Optional[str] = Field(None, description="Actual device OS for parsing (e.g., 'cisco_ios', 'linux'). If None, derived from platform.")
     jump_host: Optional[str] = Field(None, description="Jump host device ID for proxy connections")
     ssh_args: Optional[str] = Field(None, description="Custom SSH arguments for connection")
     use_persistent_connection: Optional[bool] = Field(False, description="Use persistent connection through jump host")

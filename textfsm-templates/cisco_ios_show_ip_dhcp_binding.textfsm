@@ -1,5 +1,5 @@
 Value IP_ADDRESS (\S+)
-Value HARDWARE_ADDRESS ((?:[0-9A-Fa-f]{2}[.:]){2,}(?:[0-9A-Fa-f]{2}[.:])?[0-9A-Fa-f]{0,4})
+Value HARDWARE_ADDRESS ([\da-fA-F]{4}\.[\da-fA-F]{4}\.[\da-fA-F]{4}\.?[\da-fA-F]*\.?)
 Value EXPIRATION (.+?)
 Value TYPE (\S+)
 
@@ -13,7 +13,7 @@ DhcpTable
   ^\s*Hardware\s+address/\s*$$
   ^\s*User\s+name\s*$$
   ^\s*${IP_ADDRESS}\s+\S+\s+${EXPIRATION}\s+${TYPE}\s*$$
-  ^\s+(?P<_CONT>[\da-fA-F.]+)\s*$$
-  ^\s+(?P<_CONT2>[\da-fA-F.]+)\s*$$
+  ^\s*${HARDWARE_ADDRESS}\s*$$
+  ^\s+[\da-fA-F.]+\s*$$
   ^\s*$$ -> Record
   ^. -> Error

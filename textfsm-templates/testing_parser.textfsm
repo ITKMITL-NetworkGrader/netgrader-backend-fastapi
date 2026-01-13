@@ -1,0 +1,48 @@
+Value ARCHITECTURE (.+?)
+Value CPU_OP_MODES (.+?)
+Value CPU_COUNT (\d+)
+Value VENDOR_ID (.+?)
+Value MODEL_NAME (.+?)
+Value CPU_FAMILY (\d+)
+Value MODEL (\d+)
+Value THREADS_PER_CORE (\d+)
+Value CORES_PER_SOCKET (\d+)
+Value SOCKETS (\d+)
+Value STEPS (\d+)
+Value BOGOMIPS (.+?)
+Value List FLAGS (\S+)
+Value VIRTUALIZATION (\S+)
+Value L1D_CACHE (.+?)
+Value L1I_CACHE (.+?)
+Value L2_CACHE (.+?)
+Value L3_CACHE (.+?)
+
+Start
+  ^\s*Architecture:\s+${ARCHITECTURE}\s*$$
+  ^\s*CPU op-mode\(s\):\s+${CPU_OP_MODES}\s*$$
+  ^\s*CPU\(s\):\s+${CPU_COUNT}\s*$$
+  ^\s*Vendor ID:\s+${VENDOR_ID}\s*$$
+  ^\s*Model name:\s+${MODEL_NAME}\s*$$
+  ^\s*CPU family:\s+${CPU_FAMILY}\s*$$
+  ^\s*Model:\s+${MODEL}\s*$$
+  ^\s*Thread\(s\) per core:\s+${THREADS_PER_CORE}\s*$$
+  ^\s*Core\(s\) per socket:\s+${CORES_PER_SOCKET}\s*$$
+  ^\s*Socket\(s\):\s+${SOCKETS}\s*$$
+  ^\s*Stepping:\s+${STEPS}\s*$$
+  ^\s*BogoMIPS:\s+${BOGOMIPS}\s*$$
+  ^\s*Virtualization:\s+${VIRTUALIZATION}\s*$$
+  ^\s*L1d:\s+${L1D_CACHE}\s*$$
+  ^\s*L1i:\s+${L1I_CACHE}\s*$$
+  ^\s*L2:\s+${L2_CACHE}\s*$$
+  ^\s*L3:\s+${L3_CACHE}\s*$$
+  # Handle the multi-line Flags section
+  ^\s*Flags:\s+ -> Flags
+  # Capture any other line strictly to prevent error, but do nothing
+  ^.*$$
+
+Flags
+  # Capture flags on the first line or subsequent indented lines
+  # We split by space to get a clean list
+  ^\s+(${FLAGS}\s+)+
+  # If we hit a line that doesn't start with whitespace, go back to Start
+  ^\S -> Start

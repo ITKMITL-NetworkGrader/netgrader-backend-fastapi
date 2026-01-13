@@ -27,7 +27,7 @@ from .custom_task_registry import (
     CustomTaskValidationCondition,
     CustomTaskRegistry
 )
-from app.services.grading.network_grader import TaskResult, TaskStatus
+from app.schemas.models import TaskStatus
 
 logger = logging.getLogger(__name__)
 
@@ -252,17 +252,16 @@ class CustomTaskExecutor:
     executes commands through appropriate Nornir methods, and validates results.
     """
     
-    def __init__(self, nornir_grading_service):
+    def __init__(self, nornir_grading_service, registry: CustomTaskRegistry = None):
         """
         Initialize the custom task executor
         
         Args:
             nornir_grading_service: Instance of NornirGradingService for command execution
+            registry: Pre-initialized CustomTaskRegistry instance (should be initialized with MinIO)
         """
-        from app.core.config import config
-        
         self.nornir_service = nornir_grading_service
-        self.registry = CustomTaskRegistry(config.CUSTOM_TASK_REGISTRY_DIR)
+        self.registry = registry
         self.validation_engine = CustomTaskValidationEngine()
         
     async def execute_custom_task(self, 

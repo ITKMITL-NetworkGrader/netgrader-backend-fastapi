@@ -12,6 +12,7 @@ Simple test jobs to validate custom task templates like:
 """
 
 import asyncio
+import json
 from app.services.grading.simple_grading_service import SimpleGradingService
 from app.schemas.models import GradingJob
 
@@ -373,19 +374,85 @@ DHCP_TEST_JOB = {
     "devices": [
         {
             "id": "router1",
-            "ip_address": "10.70.38.101",
-            "connection_type": "ssh",
-            "credentials": {
-                "username": "admin",
-                "password": "cisco"
-            },
-            "platform": "cisco_ios",
+            "ip_address": "10.70.38.7",
+            "port": 5023,
+            "connection_type": "telnet",
+            "platform": "generic_termserver_telnet",
+            "device_os": "cisco_ios",
             "role": "direct"
-        }
+        },
+        # {
+        #     "id": "router1",
+        #     "ip_address": "10.70.38.7",
+        #     "port": 5023,
+        #     "connection_type": "telnet",
+        #     "credentials": {
+        #         "username": "admin",
+        #         "password": "cisco"
+        #     },
+        #     "platform": "generic_termserver_telnet",
+        #     "role": "direct"
+        # }
     ],
     "ip_mappings": {}
 }
 
+CONSOLE_TERMINAL_TEST_JOB = {
+    "job_id": "test_console_terminal",
+    "student_id": "student_test",
+    "lab_id": "console_terminal_test_lab",
+    "part": {
+        "part_id": "part1",
+        "title": "Console Terminal Data Verification",
+        "network_tasks": [
+            {
+                "task_id": "check_console_terminal",
+                "name": "Check Console Terminal",
+                "template_name": "linux_curl",
+                "execution_device": "test",
+                "parameters": {
+                    "target_domain": "google.com",
+                    "expected_result": "fail"
+                },
+                "test_cases": [],
+                "points": 15
+            }
+        ],
+        "groups": []
+    },
+    "devices": [
+        {
+            "id": "test",
+            "ip_address": "10.70.38.8",
+            "port": 5004,
+            "connection_type": "telnet",
+            "platform": "generic_termserver_telnet",
+            "device_os": "linux",
+            "role": "direct"
+        },
+        # {
+        #     "id": "test",
+        #     "ip_address": "10.70.38.7",
+        #     "port": 5058,
+        #     "connection_type": "telnet",
+        #     "platform": "generic_termserver_telnet",
+        #     "device_os": "linux",
+        #     "role": "direct"
+        # }
+        # {
+        #     "id": "test",
+        #     "ip_address": "10.70.38.101",
+        #     "connection_type": "telnet",
+        #     "credentials": {
+        #         "username": "admin",
+        #         "password": "cisco"
+        #     },
+        #     "platform": "cisco_ios",
+        #     "role": "direct"
+        # }
+    ],
+    "ip_mappings": {}
+}
 
 async def test_template(job_dict, test_name):
     """Run a single template test"""
@@ -437,6 +504,7 @@ async def test_template(job_dict, test_name):
         for test_result in result.test_results:
             status_emoji = "✅" if test_result.status == "passed" else "❌"
             print(f"   {status_emoji} {test_result.test_name}: {test_result.message}")
+            print(json.dumps(test_result.model_dump(), indent=2))
         
         return result.status == "completed"
     except Exception as e:
@@ -459,9 +527,10 @@ async def main():
         # (INTERFACE_STATUS_TEST_JOB, "Interface Status Check"),
         # (LINUX_SERVICE_TEST_JOB, "Linux Service Health"),
         # (COMBINED_TEMPLATES_TEST_JOB, "Combined Templates"),
-        (VLAN_TEST_JOB, "VLAN NAPALM Get Test"),
+        # (VLAN_TEST_JOB, "VLAN NAPALM Get Test"),
         # (ROUTE_TEST_JOB, "Routing Validation Test"),
-        # (DHCP_TEST_JOB , "DHCP Binding Test")
+        # (DHCP_TEST_JOB , "DHCP Binding Test"),
+        (CONSOLE_TERMINAL_TEST_JOB, "Console Terminal Test")
 
     ]
     

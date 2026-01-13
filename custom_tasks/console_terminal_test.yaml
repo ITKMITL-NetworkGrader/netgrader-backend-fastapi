@@ -1,0 +1,36 @@
+# Debug Example Template - Shows how to use debug features
+# This template demonstrates debugging capabilities for instructors
+
+task_name: "console_terminal_test"
+description: "Testing connection via console terminal"
+connection_type: "netmiko"
+author: "NetGrader Team"
+version: "1.0.0"
+points: 7
+
+parameters:
+
+# Debug configuration - instructors can enable what they want to see
+debug:
+  # show_command_results: true          # Show output from each command
+  show_registered_variables: true 
+
+commands:
+  - name: "prepare_1"
+    action: "netmiko_send_command"
+    parameters:
+      command: "\x03"
+  - name: "send_command"
+    action: "netmiko_send_command"
+    parameters:
+      command: "ping 10.70.38.1"
+      last_read: 2.0
+      use_textfsm: true
+    register: "result"
+  # - name: "parse_result_output"
+  #   action: "parse_output"
+  #   parameters:
+  #     parser: "textfsm"
+  #     input: "{{result}}"
+  #     template_path: "/home/nitruzx/netgrader2025/netgrader-backend-fastapi/textfsm-templates/cisco_ios_show_ip_dhcp_binding.textfsm"
+  #   register: "parsed_result"

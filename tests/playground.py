@@ -2,7 +2,7 @@
 
 import asyncio
 
-from app.services.grading.network_grader import Device as SimpleDevice
+from app.schemas.models import Device, ConnectionType
 from app.services.grading.nornir_grading_service import NornirGradingService
 from app.services.pipeline.snapshot_collector import SnapshotCollector
 from app.services.connectivity.api_client import APIClient
@@ -18,26 +18,26 @@ async def main():
     }
     # Define a minimal topology for testing; replace credentials with real ones.
     sample_devices = [
-        SimpleDevice(
+        Device(
             id="ubuntu1",
             ip_address="172.40.210.130",
-            username="ubuntu",
-            password="ubuntu",
-            device_type="linux",
+            credentials={"username": "ubuntu", "password": "ubuntu"},
+            platform="linux",
+            connection_type=ConnectionType.SSH,
         ),
-        SimpleDevice(
+        Device(
             id="ubuntu2",
             ip_address="172.40.117.34",
-            username="ubuntu",
-            password="ubuntu",
-            device_type="linux",
+            credentials={"username": "ubuntu", "password": "ubuntu"},
+            platform="linux",
+            connection_type=ConnectionType.SSH,
         ),
-        SimpleDevice(
+        Device(
             id="router1",
             ip_address="10.70.38.101",
-            username="admin",
-            password="cisco",
-            device_type="cisco_router",
+            credentials={"username": "admin", "password": "cisco"},
+            platform="cisco_router",
+            connection_type=ConnectionType.NETWORK_CLI,
         ),
     ]
 

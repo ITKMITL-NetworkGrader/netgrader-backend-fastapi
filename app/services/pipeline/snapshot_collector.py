@@ -8,7 +8,7 @@ from nornir_napalm.plugins.tasks import napalm_get
 
 from app.services.connectivity import MinioService
 from app.services.grading.nornir_grading_service import NornirGradingService
-from app.services.connectivity.connection_manager import ConnectionMode
+from app.schemas.models import ExecutionMode
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +76,7 @@ class SnapshotCollector:
         try:
             async with self.grading_service.connection_manager.get_connection(
                 device_id=device_id,
-                connection_mode=ConnectionMode.ISOLATED,
+                connection_mode=ExecutionMode.ISOLATED,
             ) as context:
                 device_nr = self.grading_service.connection_manager.get_filtered_nornir(context, device_id)
                 result = device_nr.run(
@@ -101,7 +101,7 @@ class SnapshotCollector:
         try:
             async with self.grading_service.connection_manager.get_connection(
                 device_id=device_id,
-                connection_mode=ConnectionMode.ISOLATED,
+                connection_mode=ExecutionMode.ISOLATED,
             ) as context:
                 device_nr = self.grading_service.connection_manager.get_filtered_nornir(context, device_id)
 

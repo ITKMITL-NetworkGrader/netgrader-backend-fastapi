@@ -1,16 +1,21 @@
 """
-Global Task Template Registry - Auto-load global task templates from directory
+Global Task Template Registry - Auto-load global task templates from MinIO
 
-This service automatically loads task templates from YAML files in a directory.
+This service automatically loads task templates from YAML files stored in MinIO.
 Templates are globally available and referenced directly by their task_name.
 """
 
+import asyncio
 import logging
 import yaml
-from typing import Dict, Any, List, Optional, Union
+from typing import Dict, Any, List, Optional, Union, TYPE_CHECKING
 from dataclasses import dataclass
 from pathlib import Path
 from enum import Enum
+from app.core.config import config
+
+if TYPE_CHECKING:
+    from app.services.connectivity.minio_service import MinioService
 
 logger = logging.getLogger(__name__)
 
@@ -93,29 +98,50 @@ class CustomTaskValidationError(Exception):
 
 class CustomTaskRegistry:
     """
-    Registry for global task templates that are auto-loaded from a directory.
+    Registry for global task templates that are auto-loaded from MinIO.
     
-    Templates are loaded automatically from YAML files and made available
-    globally using their task_name as the identifier (no prefix/suffix).
+    Templates are loaded automatically from YAML files stored in MinIO bucket
+    under the 'custom_tasks/' prefix and made available globally using their
+    task_name as the identifier.
     """
     
-    def __init__(self, registry_dir: str = "custom_tasks"):
+    # Prefix for custom task objects in MinIO
+    DEFAULT_PREFIX = f"{config.CUSTOM_TASK_REGISTRY_DIR}/"
+    
+    def __init__(
+        self,
+        minio_service: Optional["MinioService"] = None,
+        bucket_name: str = "",
+    ):
         """
         Initialize the global task template registry
         
         Args:
-            registry_dir: Directory containing global task template YAML files
+            minio_service: MinioService instance for loading templates from MinIO
+            bucket_name: MinIO bucket name containing task templates
         """
-        self.templates_dir = Path(registry_dir)
-        self.templates_dir.mkdir(parents=True, exist_ok=True)
+        self._minio_service = minio_service
+        self._bucket_name = bucket_name
         
         # Cache for loaded templates using task_name as key
         self._template_cache: Dict[str, CustomTaskDefinition] = {}
+        self._initialized = False
         
-        # Load all templates on initialization
-        self._load_global_templates()
-        
-        logger.info(f"Global task registry initialized with {len(self._template_cache)} templates from {self.templates_dir}")
+    async def initialize(self) -> None:
+        """
+        Async initialization - load all templates from MinIO.
+        Must be called after construction before using the registry.
+        """
+        if self._initialized:
+            return
+            
+        if self._minio_service:
+            await self._load_templates_from_minio()
+        else:
+            logger.warning("No MinIO service provided, registry will be empty")
+            
+        self._initialized = True
+        logger.info(f"Global task registry initialized with {len(self._template_cache)} templates from MinIO bucket '{self._bucket_name}'")
     
     def get_template(self, task_name: str) -> Optional[CustomTaskDefinition]:
         """
@@ -162,15 +188,15 @@ class CustomTaskRegistry:
         """
         return task_name in self._template_cache
     
-    def reload_templates(self) -> int:
+    async def reload_templates(self) -> int:
         """
-        Reload all templates from the directory
+        Reload all templates from MinIO
         
         Returns:
             Number of templates loaded
         """
         self._template_cache.clear()
-        return self._load_global_templates()
+        return await self._load_templates_from_minio()
     
     def validate_parameters(self, task_name: str, parameters: Dict[str, Any]) -> List[str]:
         """
@@ -503,39 +529,64 @@ class CustomTaskRegistry:
             raise CustomTaskValidationError(f"Template validation failed: {'; '.join(errors)}")
     
     
-    def _load_global_templates(self) -> int:
-        """Load global task templates from YAML files in directory"""
-        if not self.templates_dir.exists():
-            logger.warning(f"Templates directory does not exist: {self.templates_dir}")
+    async def _load_templates_from_minio(self) -> int:
+        """Load global task templates from YAML files stored in MinIO.
+        
+        Objects are expected at: custom_tasks/<task-name>.yaml
+        """
+        if not self._minio_service:
+            logger.warning("No MinIO service provided, cannot load templates")
             return 0
             
         loaded_count = 0
         
-        # Load global task templates directly from YAML files
-        for yaml_file in self.templates_dir.glob("*.yaml"):
-            try:
-                with open(yaml_file, 'r', encoding='utf-8') as f:
-                    template_data = yaml.safe_load(f)
-                
-                if not template_data or 'task_name' not in template_data:
-                    logger.warning(f"Invalid template file (missing task_name): {yaml_file}")
-                    continue
-                
-                # Create task definition directly from YAML data
-                task_definition = self._create_task_definition_from_dict(template_data)
-                
-                # Validate the task definition
-                self._validate_template(task_definition)
-                
-                # Store in cache using task_name as key (no prefix/suffix)
-                self._template_cache[task_definition.task_name] = task_definition
-                loaded_count += 1
-                
-                logger.debug(f"Loaded global template: {task_definition.task_name} from {yaml_file.name}")
-                
-            except Exception as e:
-                logger.warning(f"Failed to load template from {yaml_file}: {e}")
+        try:
+            # List all objects under the custom_tasks/ prefix
+            object_names: List[str] = []
+            async for obj_name in self._minio_service.list_objects(
+                bucket_name=self._bucket_name,
+                prefix=self.DEFAULT_PREFIX,
+                recursive=True
+            ):
+                # Only process .yaml files
+                if obj_name.endswith('.yaml') or obj_name.endswith('.yml'):
+                    object_names.append(obj_name)
+            
+            logger.debug(f"Found {len(object_names)} YAML files in MinIO bucket '{self._bucket_name}'")
+            
+            # Load each template
+            for object_name in object_names:
+                try:
+                    # Download YAML content from MinIO
+                    yaml_bytes = await self._minio_service.download_data(
+                        object_name=object_name,
+                        bucket_name=self._bucket_name
+                    )
+                    yaml_content = yaml_bytes.decode('utf-8')
+                    template_data = yaml.safe_load(yaml_content)
+                    
+                    if not template_data or 'task_name' not in template_data:
+                        logger.warning(f"Invalid template file (missing task_name): {object_name}")
+                        continue
+                    
+                    # Create task definition directly from YAML data
+                    task_definition = self._create_task_definition_from_dict(template_data)
+                    
+                    # Validate the task definition
+                    self._validate_template(task_definition)
+                    
+                    # Store in cache using task_name as key
+                    self._template_cache[task_definition.task_name] = task_definition
+                    loaded_count += 1
+                    
+                    logger.debug(f"Loaded global template: {task_definition.task_name} from {object_name}")
+                    
+                except Exception as e:
+                    logger.warning(f"Failed to load template from MinIO object '{object_name}': {e}")
+            
+        except Exception as e:
+            logger.error(f"Failed to list templates from MinIO bucket '{self._bucket_name}': {e}")
+            return 0
         
-        logger.info(f"Loaded {loaded_count} global task templates from directory")
+        logger.info(f"Loaded {loaded_count} global task templates from MinIO")
         return loaded_count
-    
