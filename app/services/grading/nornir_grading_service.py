@@ -389,20 +389,45 @@ class NornirGradingService:
                 
                 raw_output = None
                 if hasattr(device_result, "result"):
-                    if isinstance(device_result.result, str) and device_type == "generic_termserver_telnet":
-                        # 1. Remove ANSI escape sequences (CSI, OSC)
-                        # CSI: \x1B\[[0-?]*[ -/]*[@-~]
-                        # OSC: \x1B\].*?\x07
-                        ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+                    # Apply cleaning for telnet-based connections
+                    if isinstance(device_result.result, str) and device_type in ("generic_termserver_telnet", "generic_telnet"):
+                        ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~]|\].*?(?:\x07|\x1B\\))')
                         output = ansi_escape.sub('', device_result.result)
                         
-                        # 2. Remove other control characters (keep newlines and tabs)
-                        # Remove characters in range \x00-\x08, \x0b-\x1f, \x7f-\x9f
+                        osc_remnants = re.compile(r'\d+;[^\s]+@[^\s]+:[^\n]*')
+                        output = osc_remnants.sub('', output)
+                        
                         control_chars = re.compile(r'[\x00-\x08\x0b-\x1f\x7f-\x9f]')
                         output = control_chars.sub('', output)
+                    
+                        def is_shell_prompt_line(line: str) -> bool:
+                            stripped = line.strip()
+                            if not stripped:
+                                return True
+                            
+                            # Linux prompt: user@host:path$ or user@host:path#
+                            if re.match(r'^[a-zA-Z0-9_-]+@[a-zA-Z0-9._-]+:[^\s]*[$#]\s*$', stripped):
+                                return True
+                            
+                            # Linux command echo: user@host:path# command (prompt followed by command)
+                            if re.match(r'^[a-zA-Z0-9_-]+@[a-zA-Z0-9._-]+:[^\s]*[$#]\s+\S', stripped):
+                                return True
+                            
+                            # Cisco IOS prompt: hostname# or hostname>
+                            if re.match(r'^[a-zA-Z0-9_-]+[#>]\s*$', stripped):
+                                return True
+                            
+                            # Cisco IOS config mode: hostname(config)# or hostname(config-if)#
+                            if re.match(r'^[a-zA-Z0-9_-]+\([a-z0-9-]+\)[#>]\s*$', stripped):
+                                return True
+                            
+                            # Cisco IOS command echo: hostname#command or hostname>command
+                            if re.match(r'^[a-zA-Z0-9_-]+[#>]\s*\S', stripped):
+                                return True
+                            
+                            return False
                         
-                        # 3. Filter out lines that look like prompts
-                        lines = [line for line in output.splitlines() if not ('#' in line.strip())]
+                        lines = [line for line in output.splitlines() if not is_shell_prompt_line(line)]
                         
                         clean_output = "\n".join(lines).strip()
                         parsed_data = []
