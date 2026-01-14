@@ -174,7 +174,7 @@ class SimpleGradingService:
                 return raw_output
         
         # Handle system paths in output (security concern)
-        if "/" in raw_output or "site-packages" in raw_output:
+        if "site-packages" in raw_output:
             return "An unexpected error occurred during task execution. Please check the device connectivity and configuration."
         
         # No error pattern matched - return original output unchanged
