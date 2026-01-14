@@ -171,7 +171,7 @@ class SimpleGradingService:
             elif "connection" in error_lower and "refused" in error_lower:
                 return "Connection refused: The device refused the connection."
             else:
-                return "An unexpected error occurred during task execution. Please check the device connectivity and configuration."
+                return raw_output
         
         # Handle system paths in output (security concern)
         if "/" in raw_output or "site-packages" in raw_output:
