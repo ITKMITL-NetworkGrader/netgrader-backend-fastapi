@@ -129,12 +129,12 @@ class NornirGradingService:
                 # Get filtered Nornir instance for this device
                 device_nr = self.connection_manager.get_filtered_nornir(context, device_id)
                 
-                # Get device platform to determine ping command format
+                # Get device OS to determine ping command format
                 device_host = device_nr.inventory.hosts[device_id]
+                device_os = device_host.data.get("device_os", "") if hasattr(device_host, 'data') else ""
                 device_platform = device_host.platform
-                
-                # Execute ping command via netmiko - choose command based on platform
-                if device_platform == "ios" or "cisco" in device_platform.lower():
+                # Execute ping command via netmiko - choose command based on device OS
+                if device_os == "ios" or (device_os and "cisco" in device_os.lower()):
                     # Cisco IOS ping format
                     ping_command = f"ping {target_ip} repeat {ping_count}"
                 else:
@@ -156,7 +156,7 @@ class NornirGradingService:
                     output = device_result.result if hasattr(device_result, 'result') else str(device_result)
                     
                     # Check success based on platform
-                    if device_platform == "ios" or "cisco" in device_platform.lower():
+                    if device_os == "ios" or "cisco" in device_os.lower():
                         # Cisco IOS: Look for "Success rate is 100 percent" or "!!!!!"
                         success = ("Success rate is 100 percent" in output or 
                                   "!!!!!" in output or
