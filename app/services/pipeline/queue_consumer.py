@@ -77,15 +77,15 @@ class QueueConsumer:
             await self.connect()
         
         self.is_running = True
-        logger.info("🚀 FastAPI Worker: Starting to consume grading jobs from RabbitMQ queue")
-        logger.info(f"📡 Listening on queue: {config.GRADING_QUEUE}")
+        logger.info("FastAPI Worker: Starting to consume grading jobs from RabbitMQ queue")
+        logger.info(f"Listening on queue: {config.GRADING_QUEUE}")
         
         # Start consuming messages
         await self.queue.consume(self._process_message)
         
         # Start periodic cleanup task
         self.cleanup_task = asyncio.create_task(self._periodic_cleanup())
-        logger.info("🧹 Started periodic cleanup task")
+        logger.info("Started periodic cleanup task")
         
         # Keep the consumer running
         try:
@@ -107,11 +107,11 @@ class QueueConsumer:
                 job_data = json.loads(message.body.decode())
                 job = GradingJob(**job_data)
                 
-                logger.info(f"📥 Received grading job from queue: {job.job_id}")
-                logger.info(f"👨‍🎓 Student: {job.student_id} | 📚 Lab: {job.lab_id}")
-                logger.info(f"🧩 Part: {job.part.title}")
+                logger.info(f"Received grading job from queue: {job.job_id}")
+                logger.info(f"Student: {job.student_id} | Lab: {job.lab_id}")
+                logger.info(f"Part: {job.part.title}")
                 total_tasks = len(job.part.network_tasks)
-                logger.info(f"🧪 Total tasks to run: {total_tasks}")
+                logger.info(f"Total tasks to run: {total_tasks}")
                 
                 # Ensure grading service is initialized before processing
                 await self.grading_service.initialize()
@@ -158,11 +158,11 @@ class QueueConsumer:
                     break
                     
                 # Perform cleanup
-                logger.info("🧹 Running periodic cleanup of old files")
+                logger.info("Running periodic cleanup of old files")
                 self.grading_service.cleanup_old_files()
                 
             except asyncio.CancelledError:
-                logger.info("🧹 Periodic cleanup task cancelled")
+                logger.info("Periodic cleanup task cancelled")
                 break
             except Exception as e:
                 logger.error(f"Error in periodic cleanup: {e}")
