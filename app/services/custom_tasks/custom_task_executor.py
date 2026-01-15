@@ -382,13 +382,13 @@ class CustomTaskExecutor:
                 stdout_lines.append("=== DEBUG INFORMATION ===")
                 
                 if debug_config.show_parameter_substitution:
-                    stdout_lines.append(f"📝 PARAMETERS RECEIVED:")
+                    stdout_lines.append(f"PARAMETERS RECEIVED:")
                     for param_name, param_value in parameters.items():
                         stdout_lines.append(f"  • {param_name} = '{param_value}'")
                     stdout_lines.append("")
                 
                 if debug_config.show_registered_variables:
-                    stdout_lines.append(f"📦 REGISTERED VARIABLES:")
+                    stdout_lines.append(f"REGISTERED VARIABLES:")
                     for var_name, var_value in context.variables.items():
                         # Truncate long values for readability
                         display_value = str(var_value)
@@ -398,7 +398,7 @@ class CustomTaskExecutor:
                     stdout_lines.append("")
                 
                 if debug_config.show_command_results:
-                    stdout_lines.append(f"🔧 COMMAND RESULTS:")
+                    stdout_lines.append(f"COMMAND RESULTS:")
                     for i, cmd_result in enumerate(command_results):
                         cmd_name = cmd_result.get("command_name", f"Command_{i}")
                         success = cmd_result.get("success", False)
@@ -414,7 +414,7 @@ class CustomTaskExecutor:
                     stdout_lines.append("")
                 
                 if debug_config.show_validation_details:
-                    stdout_lines.append(f"🔍 VALIDATION DETAILS:")
+                    stdout_lines.append(f"VALIDATION DETAILS:")
                     for i, val_result in enumerate(validation_results):
                         field = val_result.get("field", f"validation_{i}")
                         passed = val_result.get("passed", False)
@@ -426,7 +426,7 @@ class CustomTaskExecutor:
                     stdout_lines.append("")
                 
                 if debug_config.custom_debug_points:
-                    stdout_lines.append(f"🎯 CUSTOM DEBUG POINTS:")
+                    stdout_lines.append(f"CUSTOM DEBUG POINTS:")
                     for debug_point in debug_config.custom_debug_points:
                         if debug_point in context.variables:
                             value = context.variables[debug_point]
