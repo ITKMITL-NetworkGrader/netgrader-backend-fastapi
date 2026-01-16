@@ -427,6 +427,14 @@ class NornirGradingService:
                             if re.match(r'^[a-zA-Z0-9_-]+[#>]\s*\S', stripped):
                                 return True
                             
+                            # BusyBox/Alpine minimal prompt: / # or /path # or ~ $ or ~ #
+                            if re.match(r'^[/~][^\s]*\s*[$#]\s*$', stripped):
+                                return True
+                            
+                            # BusyBox/Alpine command echo: / # command or /path # command
+                            if re.match(r'^[/~][^\s]*\s*[$#]\s+\S', stripped):
+                                return True
+                            
                             return False
                         
                         lines = [line for line in output.splitlines() if not is_shell_prompt_line(line)]

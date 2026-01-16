@@ -13,6 +13,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from enum import Enum
 from app.core.config import config
+from app.services.grading.ipv6_utils import is_valid_ipv6
+
 
 if TYPE_CHECKING:
     from app.services.connectivity.minio_service import MinioService
@@ -356,6 +358,13 @@ class CustomTaskRegistry:
             cidr_pattern = r'^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\/(?:[0-9]|[1-2][0-9]|3[0-2])$'
             if not re.match(cidr_pattern, value):
                 return f"must be valid CIDR notation (e.g., 10.0.24.0/24), got '{value}'"
+        
+        elif expected_type == "ipv6_address":
+            # Validate IPv6 addresses including link-local (fe80::/10)
+            if not isinstance(value, str):
+                return f"must be an IPv6 address string"
+            if not is_valid_ipv6(value):
+                return f"must be a valid IPv6 address (including link-local), got '{value}'"
         
         else:
             # Unknown type, treat as string but warn
