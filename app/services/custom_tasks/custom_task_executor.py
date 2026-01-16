@@ -195,6 +195,9 @@ class CustomTaskValidationEngine:
         """
         try:
             if condition == CustomTaskValidationCondition.EQUALS:
+                if isinstance(actual, (int, float)):
+                    # Convert both to strings for numeric comparison
+                    return str(expected) == str(actual)
                 return actual == expected
             
             elif condition == CustomTaskValidationCondition.NOT_EQUALS:
@@ -205,6 +208,9 @@ class CustomTaskValidationEngine:
                     return str(expected) in actual
                 elif isinstance(actual, (list, dict)):
                     return expected in actual
+                elif isinstance(actual, (int, float)):
+                    # Convert both to strings for numeric comparison
+                    return str(expected) == str(actual)
                 return False
             
             elif condition == CustomTaskValidationCondition.GREATER_THAN:
