@@ -24,9 +24,9 @@ from nornir_napalm.plugins.tasks import napalm_get
 from nornir_utils.plugins.functions import print_result
 
 # Import our existing models and new connection manager
-# Import our existing models and new connection manager
 from app.services.connectivity.connection_manager import ConnectionManager
 from app.schemas.models import ExecutionMode, Device, TaskResult, TaskStatus
+from app.services.grading.exception_handler import classify_exception
 
 logger = logging.getLogger(__name__)
 
@@ -177,11 +177,12 @@ class NornirGradingService:
                 )
             
         except Exception as e:
-            logger.error(f"Ping task execution failed: {e}")
+            error = classify_exception(e)
+            logger.error(f"Ping task execution failed: {error.internal_details}")
             return TaskResult(
                 task_id=task_id,
                 status=TaskStatus.ERROR,
-                stderr=f"Ping execution failed: {str(e)}",
+                stderr=error.user_message,
                 execution_time=time.time() - start_time,
                 points_earned=0,
                 points_possible=points
@@ -317,11 +318,12 @@ class NornirGradingService:
             )
             
         except Exception as e:
-            logger.error(f"SSH connectivity test execution failed: {e}")
+            error = classify_exception(e)
+            logger.error(f"SSH connectivity test execution failed: {error.internal_details}")
             return TaskResult(
                 task_id=task_id,
                 status=TaskStatus.ERROR,
-                stderr=f"SSH connectivity test failed: {str(e)}",
+                stderr=error.user_message,
                 execution_time=time.time() - start_time,
                 points_earned=0,
                 points_possible=points
@@ -481,11 +483,12 @@ class NornirGradingService:
                 )
             
         except Exception as e:
-            logger.error(f"Command task execution failed: {e}")
+            error = classify_exception(e)
+            logger.error(f"Command task execution failed: {error.internal_details}")
             return TaskResult(
                 task_id=task_id,
                 status=TaskStatus.ERROR,
-                stderr=f"Command execution failed: {str(e)}",
+                stderr=error.user_message,
                 execution_time=time.time() - start_time,
                 points_earned=0,
                 points_possible=points
@@ -674,11 +677,12 @@ class NornirGradingService:
                 )
             
         except Exception as e:
-            logger.error(f"NAPALM task execution failed: {e}")
+            error = classify_exception(e)
+            logger.error(f"NAPALM task execution failed: {error.internal_details}")
             return TaskResult(
                 task_id=task_id,
                 status=TaskStatus.ERROR,
-                stderr=f"NAPALM execution failed: {str(e)}",
+                stderr=error.user_message,
                 execution_time=time.time() - start_time,
                 points_earned=0,
                 points_possible=points
@@ -761,11 +765,12 @@ class NornirGradingService:
             )
             
         except Exception as e:
-            logger.error(f"Custom task execution failed: {e}")
+            error = classify_exception(e)
+            logger.error(f"Custom task execution failed: {error.internal_details}")
             return TaskResult(
                 task_id=task_id,
                 status=TaskStatus.ERROR,
-                stderr=f"Custom task execution failed: {str(e)}",
+                stderr=error.user_message,
                 execution_time=time.time() - start_time,
                 points_earned=0,
                 points_possible=points

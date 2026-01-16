@@ -197,6 +197,9 @@ class CustomTaskValidationEngine:
             if condition == CustomTaskValidationCondition.EQUALS:
                 return actual == expected
             
+            elif condition == CustomTaskValidationCondition.NOT_EQUALS:
+                return actual != expected
+            
             elif condition == CustomTaskValidationCondition.CONTAINS:
                 if isinstance(actual, str):
                     return str(expected) in actual

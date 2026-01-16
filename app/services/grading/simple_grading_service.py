@@ -120,64 +120,33 @@ class SimpleGradingService:
     
     def _format_error(self, raw_output: str) -> str:
         """
-        Convert raw error messages to user-friendly format.
+        Safety-net error formatting.
         
-        Only transforms content that matches known error patterns.
-        Normal output is returned unchanged.
+        With proper exception handling upstream via classify_exception(),
+        errors should already be user-friendly. This method serves as a
+        final safety check to catch any edge cases that might still leak
+        internal system details.
         """
         if not raw_output:
             return raw_output
         
-        error_lower = raw_output.lower()
+        # Final safety check: detect any remaining system paths or tracebacks
+        sensitive_patterns = [
+            "site-packages",
+            "File \"/",
+            "Traceback (most recent",
+            "/usr/lib/python",
+            "/home/",
+        ]
         
-        # Handle Netmiko ReadTimeout errors
-        if "readtimeout" in error_lower or "pattern not detected" in error_lower:
-            return "Connection timeout: The device did not respond within the expected time. This may indicate the device is unreachable, busy, or the command took too long to execute."
+        has_sensitive_content = any(pattern in raw_output for pattern in sensitive_patterns)
         
-        # Handle authentication errors
-        if "authentication" in error_lower and ("failed" in error_lower or "error" in error_lower):
-            return "Authentication failed: Could not authenticate with the device. Please verify the credentials are correct."
-        
-        if "permission denied" in error_lower:
-            return "Authentication failed: Permission denied. Please verify the credentials are correct."
-        
-        # Handle connection refused errors
-        if "connection refused" in error_lower:
-            return "Connection refused: The device actively refused the connection. Please verify the device is reachable and the service is running on the expected port."
-        
-        # Handle timeout errors (general) - but not just any mention of "timeout"
-        if ("timeout" in error_lower or "timed out" in error_lower) and ("connection" in error_lower or "socket" in error_lower):
-            return "Connection timeout: Could not establish a connection to the device within the allowed time."
-        
-        # Handle SSH key errors
-        if "host key" in error_lower and ("verification" in error_lower or "failed" in error_lower or "error" in error_lower):
-            return "SSH key verification failed: Could not verify the device's SSH host key."
-        
-        # Handle unreachable host errors
-        if "no route to host" in error_lower or "host unreachable" in error_lower or "network unreachable" in error_lower:
-            return "Network error: The device is unreachable. Please verify network connectivity."
-        
-        # Handle name resolution errors
-        if "name or service not known" in error_lower or "could not resolve" in error_lower:
-            return "DNS error: Could not resolve the device hostname. Please verify the hostname is correct."
-        
-        # Handle command execution errors with tracebacks
-        if "traceback" in error_lower or "File \"" in raw_output:
-            # This looks like a Python traceback - provide clean message
-            if "readtimeout" in error_lower:
-                return "Connection timeout: The device did not respond within the expected time."
-            elif "authentication" in error_lower:
-                return "Authentication failed: Could not authenticate with the device."
-            elif "connection" in error_lower and "refused" in error_lower:
-                return "Connection refused: The device refused the connection."
-            else:
-                return raw_output
-        
-        # Handle system paths in output (security concern)
-        if "site-packages" in raw_output:
+        if has_sensitive_content:
+            # Log the full error for debugging
+            logger.warning(f"Unexpected internal error content leaked: {raw_output[:200]}...")
             return "An unexpected error occurred during task execution. Please check the device connectivity and configuration."
         
-        # No error pattern matched - return original output unchanged
+        # No sensitive content detected - return original output
         return raw_output
     
     def _convert_task_result(self, task_result: TaskResult, task: NetworkTask) -> TestResult:
