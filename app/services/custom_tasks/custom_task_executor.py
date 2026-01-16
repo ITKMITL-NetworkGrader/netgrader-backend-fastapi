@@ -197,7 +197,7 @@ class CustomTaskValidationEngine:
             if condition == CustomTaskValidationCondition.EQUALS:
                 if isinstance(actual, (int, float)):
                     # Convert both to strings for numeric comparison
-                    return str(expected) == str(actual)
+                    actual = str(actual)
                 return actual == expected
             
             elif condition == CustomTaskValidationCondition.NOT_EQUALS:
