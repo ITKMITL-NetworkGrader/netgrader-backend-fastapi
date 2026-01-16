@@ -228,6 +228,12 @@ class CustomTaskRegistry:
             
             if param_def.name in parameters:
                 param_value = parameters[param_def.name]
+                
+                # Skip validation for optional parameters with empty/None values
+                # These will use their template defaults during execution
+                if not param_def.required and (param_value is None or param_value == ""):
+                    continue
+                
                 validation_error = self._validate_parameter_type(
                     param_def.name, param_value, param_def.datatype
                 )
