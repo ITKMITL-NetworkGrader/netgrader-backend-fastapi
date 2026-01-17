@@ -195,12 +195,24 @@ class CustomTaskValidationEngine:
         """
         try:
             if condition == CustomTaskValidationCondition.EQUALS:
+                # Normalize both values for consistent comparison
+                # Handle boolean/string mismatches (e.g., True vs "True")
+                if isinstance(actual, bool) or isinstance(expected, bool):
+                    # Normalize both to lowercase strings for boolean comparison
+                    actual_str = str(actual).lower()
+                    expected_str = str(expected).lower()
+                    return actual_str == expected_str
                 if isinstance(actual, (int, float)):
                     # Convert both to strings for numeric comparison
                     actual = str(actual)
                 return actual == expected
             
             elif condition == CustomTaskValidationCondition.NOT_EQUALS:
+                # Handle boolean/string mismatches (e.g., True vs "True")
+                if isinstance(actual, bool) or isinstance(expected, bool):
+                    actual_str = str(actual).lower()
+                    expected_str = str(expected).lower()
+                    return actual_str != expected_str
                 return actual != expected
             
             elif condition == CustomTaskValidationCondition.CONTAINS:
