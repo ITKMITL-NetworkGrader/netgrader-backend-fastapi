@@ -77,7 +77,7 @@ class NornirGradingService:
         start_time = time.time()
         target_ip = parameters.get("target_ip")
         ping_count = parameters.get("ping_count", 3)
-        points = parameters.get("points", 10)
+        points = parameters.get("points", 10.0)
         execution_mode = parameters.get("execution_mode", ExecutionMode.ISOLATED)
         session_id = parameters.get("stateful_session_id")
         connection_timeout = parameters.get("connection_timeout", 30)
@@ -192,7 +192,7 @@ class NornirGradingService:
         """Execute SSH connectivity test with connection isolation"""
         start_time = time.time()
         target_ip = parameters.get("target_ip")
-        points = parameters.get("points", 10)
+        points = parameters.get("points", 10.0)
         execution_mode = parameters.get("execution_mode", ExecutionMode.ISOLATED)
         session_id = parameters.get("stateful_session_id")
         connection_timeout = parameters.get("connection_timeout", 30)
@@ -333,7 +333,7 @@ class NornirGradingService:
         """Execute command task using nornir-netmiko with connection isolation"""
         start_time = time.time()
         command = parameters.get("command")
-        points = parameters.get("points", 10)
+        points = parameters.get("points", 10.0)
         connection_mode = parameters.get("execution_mode", ExecutionMode.ISOLATED)
         session_id = parameters.get("stateful_session_id")
         connection_timeout = parameters.get("connection_timeout", 30)
@@ -506,7 +506,7 @@ class NornirGradingService:
         """Execute NAPALM task using nornir-napalm with connection isolation"""
         start_time = time.time()
         operation = parameters.get("operation", "get_interfaces")
-        points = parameters.get("points", 10)
+        points = parameters.get("points", 10.0)
         execution_mode = parameters.get("execution_mode", ExecutionMode.ISOLATED)
         session_id = parameters.get("stateful_session_id")
         connection_timeout = parameters.get("connection_timeout", 30)
@@ -715,7 +715,7 @@ class NornirGradingService:
                 task_id=task_id,
                 status=TaskStatus.ERROR,
                 stderr=f"Unknown task type: {task_type}",
-                points_possible=parameters.get("points", 10)
+                points_possible=parameters.get("points", 10.0)
             )
             
     async def execute_custom_task(self, task_id: str, device_id: str, parameters: Dict[str, Any]) -> TaskResult:
@@ -732,7 +732,7 @@ class NornirGradingService:
         """
         start_time = time.time()
         custom_task_id = parameters.get("custom_task_id")
-        points = parameters.get("points", 10)
+        points = parameters.get("points", 10.0)
         
         if not custom_task_id:
             return TaskResult(

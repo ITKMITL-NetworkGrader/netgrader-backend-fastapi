@@ -24,8 +24,8 @@ class TaskResult(BaseModel):
     stdout: str = ""
     stderr: str = ""
     execution_time: float = 0.0
-    points_earned: int = 0
-    points_possible: int = 10
+    points_earned: float = 0.0
+    points_possible: float = 10.0
     debug_info: Optional[Dict[str, Any]] = None
 
 class Device(BaseModel):
@@ -56,7 +56,7 @@ class NetworkTask(BaseModel):
     target_device: Optional[str] = Field(None, description="Optional target device for multi-device tasks")
     parameters: Dict[str, Any] = Field(default_factory=dict)
     test_cases: List[TestCase] = Field(default_factory=list)
-    points: int = Field(default=1)
+    points: float = Field(default=1.0)
     group_id: Optional[str] = Field(None, description="Optional group ID for task grouping")
     execution_mode: ExecutionMode = Field(ExecutionMode.ISOLATED, description="Connection execution mode")
     stateful_session_id: Optional[str] = Field(None, description="Session ID for stateful connections")
@@ -68,7 +68,7 @@ class TaskGroup(BaseModel):
     title: str
     description: Optional[str] = None
     group_type: str = Field("all_or_nothing", description="'all_or_nothing' or 'proportional'")
-    points: int = Field(..., description="Total points for the entire group")
+    points: float = Field(..., description="Total points for the entire group")
     rescue_tasks: List[NetworkTask] = Field(default_factory=list, description="Tasks to run when group fails")
     cleanup_tasks: List[NetworkTask] = Field(default_factory=list, description="Tasks to always run after group")
     continue_on_failure: bool = Field(True, description="Whether to continue execution if group fails")
@@ -97,8 +97,8 @@ class TestCaseResult(BaseModel):
     actual_value: Any
     comparison_type: str
     status: str  # "passed", "failed", "error"
-    points_earned: int
-    points_possible: int
+    points_earned: float
+    points_possible: float
     message: str
 
 class DebugInfo(BaseModel):
@@ -115,8 +115,8 @@ class TestResult(BaseModel):
     test_name: str
     status: str  # "passed", "failed", "error"
     message: str
-    points_earned: int
-    points_possible: int
+    points_earned: float
+    points_possible: float
     execution_time: float
     test_case_results: List[TestCaseResult] = Field(default_factory=list)
     extracted_data: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Raw data extracted from device")
@@ -130,8 +130,8 @@ class GroupResult(BaseModel):
     title: str
     status: str  # "passed", "failed", "cancelled"
     group_type: str
-    points_earned: int
-    points_possible: int
+    points_earned: float
+    points_possible: float
     execution_time: float
     task_results: List[TestResult]
     message: str
@@ -141,8 +141,8 @@ class GroupResult(BaseModel):
 class GradingResult(BaseModel):
     job_id: str
     status: str  # "running", "completed", "failed", "cancelled"
-    total_points_earned: int
-    total_points_possible: int
+    total_points_earned: float
+    total_points_possible: float
     test_results: List[TestResult]
     group_results: List[GroupResult] = Field(default_factory=list, description="Results for task groups")
     total_execution_time: float

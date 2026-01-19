@@ -52,7 +52,7 @@ class CustomTaskExecutionContext:
     variables: Dict[str, Any]  # Variables set during execution (register values)
     execution_results: List[Dict[str, Any]]  # Results from each command
     start_time: float
-    points_possible: int
+    points_possible: float
 
 
 @dataclass 
@@ -62,8 +62,8 @@ class CustomTaskExecutionResult:
     """
     task_id: str
     status: TaskStatus
-    points_earned: int
-    points_possible: int
+    points_earned: float
+    points_possible: float
     execution_time: float
     command_results: List[Dict[str, Any]]
     validation_results: List[Dict[str, Any]]
@@ -383,12 +383,12 @@ class CustomTaskExecutor:
                 # If no validations, consider success based on command execution
                 success_rate = sum(1 for c in command_results if c.get("success", False)) / len(command_results)
                 overall_success = success_rate > 0.5  # At least half commands succeeded
-                points_earned = int(total_points * success_rate)
+                points_earned = total_points * success_rate
             else:
                 # Base success on validation results
                 success_rate = passed_validations / total_validations
                 overall_success = success_rate == 1.0  # All validations must pass
-                points_earned = int(total_points * success_rate)
+                points_earned = total_points * success_rate
             
             # Prepare output strings with debug information
             stdout_lines = [f"Custom Task: {task_definition.task_name}"]
@@ -512,7 +512,7 @@ class CustomTaskExecutor:
             logger.error(f"Custom task execution failed: {e}")
             
             # Use job JSON points if provided, otherwise use default 10 points
-            error_points = parameters.get("points", 10)
+            error_points = parameters.get("points", 10.0)
             
             return CustomTaskExecutionResult(
                 task_id=task_id,

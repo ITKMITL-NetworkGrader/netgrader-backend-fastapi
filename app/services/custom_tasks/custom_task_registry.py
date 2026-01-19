@@ -91,7 +91,7 @@ class CustomTaskDefinition:
     debug_config: Optional[CustomTaskDebugConfig] = None
     author: Optional[str] = None
     version: str = "1.0.0"
-    points: int = 10
+    points: float = 10.0
 
 
 class CustomTaskValidationError(Exception):

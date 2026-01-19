@@ -134,7 +134,7 @@ class ScoringService:
         try:
             if comparison_type == "equals":
                 try:
-                    passed = int(actual) == int(expected)
+                    passed = float(actual) == float(expected)
                     message = f"Expected: {expected}, Got: {actual}"
                 except (ValueError, TypeError):
                     passed = str(actual) == str(expected)
@@ -243,7 +243,7 @@ class ScoringService:
             
         return passed, message
     
-    def calculate_test_score(self, test_case_results: List[TestCaseResult], total_points: int) -> tuple[int, str]:
+    def calculate_test_score(self, test_case_results: List[TestCaseResult], total_points: Union[int, float]) -> tuple[float, str]:
         """
         Calculate overall test score from test case results
         
@@ -259,9 +259,8 @@ class ScoringService:
         # Calculate proportional score
         if total_case_points > 0:
             score_ratio = earned_case_points / total_case_points
-            final_points = int(total_points * score_ratio)
-        else:
-            final_points = 0
+            final_points = total_points * score_ratio
+            final_points = 0.0
             
         passed_cases = sum(1 for result in test_case_results if result.status == "passed")
         total_cases = len(test_case_results)
@@ -327,7 +326,7 @@ class ScoringService:
             status = "passed"
             message = f"Group passed: all {len(task_results)} tasks succeeded"
         else:
-            points_earned = 0
+            points_earned = 0.0
             status = "failed"
             failed_count = len(failed_tasks)
             failed_names = [result.test_name for result in failed_tasks]
@@ -355,10 +354,10 @@ class ScoringService:
         
         if total_count > 0:
             score_ratio = passed_count / total_count
-            points_earned = int(group.points * score_ratio)
+            points_earned = group.points * score_ratio
         else:
             score_ratio = 0
-            points_earned = 0
+            points_earned = 0.0
         
         # Determine status
         if passed_count == total_count:

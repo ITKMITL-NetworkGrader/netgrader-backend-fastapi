@@ -268,8 +268,8 @@ class SimpleGradingService:
         # Track results
         test_results = []
         group_results = []
-        total_points_possible = 0
-        total_points_earned = 0
+        total_points_possible = 0.0
+        total_points_earned = 0.0
         execution_cancelled = False
         cancellation_reason = None
         
