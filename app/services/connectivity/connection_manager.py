@@ -403,6 +403,23 @@ class ConnectionManager:
             
         logger.info("All connections cleaned up")
     
+    async def clear_job_state(self):
+        """Clear all devices and connections accumulated during a job.
+        
+        Call this after each job completes to prevent memory leaks.
+        """
+        logger.info(f"Clearing job state: {len(self.devices)} devices, "
+                    f"{len(self._active_connections)} connections")
+        
+        # Close all active connections first
+        await self.cleanup_all()
+        
+        # Clear device registrations
+        self.devices.clear()
+        self.device_groups.clear()
+        
+        logger.info("Job state cleared")
+    
     def get_connection_stats(self) -> Dict[str, Any]:
         """Get statistics about active connections"""
         active_by_mode = {}

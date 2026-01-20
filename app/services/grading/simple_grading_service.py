@@ -404,7 +404,20 @@ class SimpleGradingService:
                 logger.error(f"Failed to send final result: {e}")
         
         logger.info(f"Grading job completed: {total_points_earned}/{total_points_possible} points ({success_rate:.1f}%)")
+        
+        # Clean up job state to prevent memory leaks
+        await self._cleanup_job_state()
+        
         return result
+    
+    async def _cleanup_job_state(self):
+        """Clean up state accumulated during job processing."""
+        try:
+            # Clear device registrations from connection manager
+            await self.grader.connection_manager.clear_job_state()
+            logger.debug("Cleaned up job state")
+        except Exception as e:
+            logger.warning(f"Error during job cleanup: {e}")
     
     def _map_template_to_nornir_task(self, template_name: str) -> str:
         """Map template names to Nornir task types"""

@@ -16,6 +16,22 @@ class APIClient:
     def __init__(self):
         self.timeout = config.CALLBACK_TIMEOUT
         self.max_retries = config.MAX_RETRIES
+        self._client: Optional[httpx.AsyncClient] = None
+    
+    async def _get_client(self) -> httpx.AsyncClient:
+        """Get or create the shared HTTP client with connection pooling."""
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient(
+                timeout=self.timeout,
+                limits=httpx.Limits(max_keepalive_connections=10, max_connections=20)
+            )
+        return self._client
+    
+    async def close(self):
+        """Close the HTTP client."""
+        if self._client and not self._client.is_closed:
+            await self._client.aclose()
+            self._client = None
     
     async def send_progress_update(self, callback_url: str, progress: ProgressUpdate) -> bool:
         """Send real-time progress update to the ElysiaJS server"""
@@ -24,16 +40,14 @@ class APIClient:
             return False
             
         try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                print(f"{callback_url}/progress")
-                response = await client.post(
-                    f"{callback_url}/progress",
-                    json=progress.model_dump(),
-                    headers={"Content-Type": "application/json"}
-                )
-                # response.raise_for_status()
-                logger.info(f"Progress update sent for job {progress.job_id}: {progress.message}")
-                return True
+            client = await self._get_client()
+            response = await client.post(
+                f"{callback_url}/progress",
+                json=progress.model_dump(),
+                headers={"Content-Type": "application/json"}
+            )
+            logger.debug(f"Progress update sent for job {progress.job_id}: {progress.message}")
+            return True
         except Exception as e:
             logger.error(f"Failed to send progress update for job {progress.job_id}: {e}")
             return False
@@ -43,19 +57,17 @@ class APIClient:
         if not callback_url:
             logger.warning("No callback URL provided for final result")
             return False
-        # import json
-        # print(json.dumps(result.model_dump(), indent=2))
+
         for attempt in range(self.max_retries):
             try:
-                async with httpx.AsyncClient(timeout=self.timeout) as client:
-                    response = await client.post(
-                        f"{callback_url}/result",
-                        json=result.model_dump(),
-                        headers={"Content-Type": "application/json"}
-                    )
-                    # response.raise_for_status()
-                    logger.info(f"Final result sent for job {result.job_id}")
-                    return True
+                client = await self._get_client()
+                response = await client.post(
+                    f"{callback_url}/result",
+                    json=result.model_dump(),
+                    headers={"Content-Type": "application/json"}
+                )
+                logger.info(f"Final result sent for job {result.job_id}")
+                return True
             except Exception as e:
                 logger.error(f"Attempt {attempt + 1} failed to send final result for job {result.job_id}: {e}")
                 if attempt < self.max_retries - 1:
@@ -74,16 +86,14 @@ class APIClient:
             return False
             
         try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                print(f"{callback_url}/started")
-                response = await client.post(
-                    f"{callback_url}/started",
-                    json={"job_id": job_id, "status": "started"},
-                    headers={"Content-Type": "application/json"}
-                )
-                # response.raise_for_status()
-                logger.info(f"Job started notification sent for job {job_id}")
-                return True
+            client = await self._get_client()
+            response = await client.post(
+                f"{callback_url}/started",
+                json={"job_id": job_id, "status": "started"},
+                headers={"Content-Type": "application/json"}
+            )
+            logger.info(f"Job started notification sent for job {job_id}")
+            return True
         except Exception as e:
             logger.error(f"Failed to send job started notification for job {job_id}: {e}")
             return False

@@ -102,6 +102,7 @@ class QueueConsumer:
         Core Feature: Job Consumption - Pick up and process jobs from queue
         """
         async with message.process():
+            job = None
             try:
                 # Parse the job payload
                 job_data = json.loads(message.body.decode())
@@ -129,6 +130,13 @@ class QueueConsumer:
                 logger.error(f"❌ Error processing grading job: {e}")
                 # The message will be requeued automatically due to exception
                 raise
+            finally:
+                # Always attempt cleanup after job processing to prevent memory leaks
+                if job is not None:
+                    try:
+                        await self.grading_service._cleanup_job_state()
+                    except Exception as cleanup_error:
+                        logger.warning(f"Cleanup error after job {job.job_id}: {cleanup_error}")
     
     async def publish_job(self, job: GradingJob):
         """Publish a grading job to the queue (useful for testing)"""

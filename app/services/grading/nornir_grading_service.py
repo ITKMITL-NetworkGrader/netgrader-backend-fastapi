@@ -2,8 +2,10 @@
 Nornir Grading Service - Nornir-based network grading implementation
 """
 
+import asyncio
 import json
 import logging
+from functools import partial
 import os
 import tempfile
 import time
@@ -56,6 +58,19 @@ class NornirGradingService:
         self._initialized = False
         self._custom_task_registry = None  # Set externally after initialization
         # self._ensure_textfsm_templates()
+    
+    async def _run_nornir_task(self, device_nr, task, **kwargs):
+        """Run a synchronous Nornir task without blocking the event loop.
+        
+        Nornir's run() is synchronous and uses threads internally. Running it
+        directly in async code blocks the event loop. This wrapper uses
+        run_in_executor to run it in the default ThreadPoolExecutor.
+        """
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            None,  # Use default ThreadPoolExecutor
+            partial(device_nr.run, task=task, **kwargs)
+        )
     
     def set_custom_task_registry(self, registry):
         """Set the custom task registry for custom task execution.
@@ -141,8 +156,9 @@ class NornirGradingService:
                     # Linux ping format  
                     ping_command = f"ping -c {ping_count} {target_ip}"
 
-                result = device_nr.run(
-                    task=netmiko_send_command,
+                result = await self._run_nornir_task(
+                    device_nr,
+                    netmiko_send_command,
                     command_string=ping_command,
                     name=f"ping_{target_ip}"
                 )
@@ -220,8 +236,9 @@ class NornirGradingService:
                     connect_command = f"connect {target_ip} 22"
                     
                     # Execute connect command and wait for response
-                    result = device_nr.run(
-                        task=netmiko_send_command,
+                    result = await self._run_nornir_task(
+                        device_nr,
+                        netmiko_send_command,
                         command_string=connect_command,
                         expect_string=r"SSH-|Connection refused|Connection timed out|Host unreachable|%",
                         delay_factor=3,
@@ -246,8 +263,9 @@ class NornirGradingService:
                                 escape_sequence = "\x1e"  # Ctrl+Shift+6 (ASCII 30)
                                 disconnect_command = f"{escape_sequence}x"
                                 
-                                device_nr.run(
-                                    task=netmiko_send_command,
+                                await self._run_nornir_task(
+                                    device_nr,
+                                    netmiko_send_command,
                                     command_string=disconnect_command,
                                     expect_string=r"[>#]",  # Wait for router prompt
                                     delay_factor=1,
@@ -283,8 +301,9 @@ class NornirGradingService:
                     # For Linux: Use netcat for SSH port testing
                     netcat_command = f"nc -zv {target_ip} 22"
                     
-                    result = device_nr.run(
-                        task=netmiko_send_command,
+                    result = await self._run_nornir_task(
+                        device_nr,
+                        netmiko_send_command,
                         command_string=netcat_command,
                         name=f"ssh_port_test_{target_ip}",
                         delay_factor=2
@@ -381,8 +400,9 @@ class NornirGradingService:
                 if textfsm_template:
                     netmiko_kwargs["textfsm_template"] = textfsm_template
 
-                result = device_nr.run(
-                    task=task_to_run,
+                result = await self._run_nornir_task(
+                    device_nr,
+                    task_to_run,
                     **netmiko_kwargs
                 )
                 # Analyze results
@@ -569,8 +589,9 @@ class NornirGradingService:
                 getter = getter_map.get(operation, operation.replace("get_", ""))
                 
                 # Execute NAPALM getter
-                result = device_nr.run(
-                    task=napalm_get,
+                result = await self._run_nornir_task(
+                    device_nr,
+                    napalm_get,
                     getters=[getter],
                     name=f"napalm_{getter}",
                     **napalm_kwargs
