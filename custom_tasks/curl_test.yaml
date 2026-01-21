@@ -1,0 +1,58 @@
+# Curl Connectivity Test - Custom Task Template
+# Tests HTTP/HTTPS connectivity using curl with timeout
+# Supports both success and failure expectations via expect_success parameter
+
+task_name: "curl_test"
+description: "Test HTTP/HTTPS connectivity to a target URL using curl"
+connection_type: "ssh"
+author: "NetGrader Team"
+version: "1.4.0"
+points: 5
+
+parameters:
+  - name: "target_url"
+    datatype: "string"
+    description: "Target IP address or domain to test with curl (e.g., http://192.168.1.1 or https://example.com)"
+    required: true
+    example: "http://192.168.1.1"
+  
+  - name: "expect_success"
+    datatype: "boolean"
+    description: "Set to true if curl should succeed (exit code 0), false if curl should fail (exit code non-zero)"
+    required: false
+    default: true
+    example: true
+
+# Debug configuration - instructors can enable what they want to see
+debug:
+  show_command_results: true
+  show_registered_variables: true
+  show_validation_details: true
+
+commands:
+  # Run curl with timeout and capture both output and exit code in one command
+  - name: "curl_connectivity"
+    action: "netmiko_send_command"
+    parameters:
+      command: "timeout 4 curl -s -f {{target_url}}; echo \"EXIT_CODE:$?\""
+    register: "curl_output"
+  
+  # Parse the exit code from the output
+  - name: "parse_exit_code"
+    action: "parse_output"
+    parameters:
+      input: "{{curl_output}}"
+      pattern: "EXIT_CODE:(\\d+)"
+    register: "exit_code_parse"
+
+validation:
+  # Use regex to match exit code against expected pattern
+  # When expect_success is true: match "^0$" (exactly 0)
+  # When expect_success is false: match "^[1-9]" (starts with non-zero digit)
+  - field: "exit_code_parse.first_match"
+    condition: "regex"
+    value: "{% if expect_success | default(true) %}^0${% else %}^[1-9]{% endif %}"
+    description: "{% if expect_success | default(true) %}Curl should succeed (exit code 0){% else %}Curl should fail (exit code non-zero){% endif %}"
+
+
+
