@@ -408,14 +408,24 @@ CONSOLE_TERMINAL_TEST_JOB = {
             {
                 "task_id": "check_console_terminal",
                 "name": "Check Console Terminal",
-                "template_name": "linux_curl",
+                "template_name": "cisco_ios_ping",
                 "execution_device": "test",
                 "parameters": {
-                    "target_domain": "google.com",
-                    "expected_result": "fail"
+                    "target_ip": "1.1.1.1",
+                    # "target_port": 22,
+                    "expect_success": False,
+                    # "filename": "uia-confg"
+                    # "ping_count": "3",
+                    # "packet_received": "3",
+                    # "source_interface": "eth0"
                 },
-                "test_cases": [],
-                "points": 15
+                "test_cases": [
+                    # {
+                    #     "comparison_type": "success",
+                    #     "expected_result": False
+                    # }
+                ],
+                "points": 0
             }
         ],
         "groups": []
@@ -423,11 +433,11 @@ CONSOLE_TERMINAL_TEST_JOB = {
     "devices": [
         {
             "id": "test",
-            "ip_address": "10.70.38.8",
-            "port": 5004,
+            "ip_address": "10.70.38.10",
+            "port": 5003,
             "connection_type": "telnet",
             "platform": "generic_termserver_telnet",
-            "device_os": "linux",
+            "device_os": "cisco_ios",
             "role": "direct"
         },
         # {
