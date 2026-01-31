@@ -257,7 +257,13 @@ class CustomTaskRegistry:
         return typed_params, errors
     
     def _coerce_value(self, value: str, expected_type: str) -> Any:
-        """Convert a string value to the expected type."""
+        if "|" in expected_type:
+            for type_option in (t.strip() for t in expected_type.split("|")):
+                coerced = self._coerce_value(value, type_option)
+                if coerced is not value:
+                    return coerced
+            return value
+        
         if expected_type == "boolean":
             lower_val = value.lower()
             if lower_val in ("true", "1", "yes"):
