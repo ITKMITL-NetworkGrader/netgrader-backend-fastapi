@@ -201,59 +201,142 @@ class CustomTaskRegistry:
         self._template_cache.clear()
         return await self._load_templates_from_minio()
     
-    def validate_parameters(self, task_name: str, parameters: Dict[str, Any]) -> List[str]:
+    def prepare_parameters(self, task_name: str, parameters: Dict[str, Any]) -> tuple:
         """
-        Validate parameters against template parameter definitions
+        Convert and validate parameters in a single pass.
         
         Args:
             task_name: Name of the task template
-            parameters: Parameters to validate
+            parameters: Raw parameters (may contain string values)
             
         Returns:
-            List of validation error messages (empty if valid)
+            Tuple of (typed_parameters: Dict, errors: List[str])
         """
         template = self.get_template(task_name)
         if not template:
-            return [f"Template '{task_name}' not found"]
+            return parameters, [f"Template '{task_name}' not found"]
         
         if not template.parameters:
-            # No parameters defined, accept any parameters
-            return []
+            return parameters, []
         
+        type_map = {p.name: p.datatype for p in template.parameters}
+        required_map = {p.name: p.required for p in template.parameters}
+        
+        typed_params = {}
         errors = []
         
-        # Check required parameters
+        # Check for missing required parameters
         for param_def in template.parameters:
             if param_def.required and param_def.name not in parameters:
                 errors.append(f"Required parameter '{param_def.name}' is missing")
+        
+        # Convert and validate each parameter
+        for key, value in parameters.items():
+            expected_type = type_map.get(key)
+            is_required = required_map.get(key, False)
+            
+            # Skip validation for optional parameters with empty/None values
+            if not is_required and (value is None or value == ""):
+                typed_params[key] = value
                 continue
             
-            if param_def.name in parameters:
-                param_value = parameters[param_def.name]
-                
-                # Skip validation for optional parameters with empty/None values
-                # These will use their template defaults during execution
-                if not param_def.required and (param_value is None or param_value == ""):
-                    continue
-                
-                validation_error = self._validate_parameter_type(
-                    param_def.name, param_value, param_def.datatype
-                )
+            # Convert string values to proper types
+            if expected_type and isinstance(value, str):
+                typed_value = self._coerce_value(value, expected_type)
+            else:
+                typed_value = value
+            
+            typed_params[key] = typed_value
+            
+            # Validate the converted value
+            if expected_type:
+                validation_error = self._validate_type(key, typed_value, expected_type)
                 if validation_error:
                     errors.append(validation_error)
         
-        return errors
+        return typed_params, errors
+    
+    def _coerce_value(self, value: str, expected_type: str) -> Any:
+        """Convert a string value to the expected type."""
+        if expected_type == "boolean":
+            lower_val = value.lower()
+            if lower_val in ("true", "1", "yes"):
+                return True
+            elif lower_val in ("false", "0", "no"):
+                return False
+        elif expected_type == "integer":
+            try:
+                return int(value)
+            except (ValueError, TypeError):
+                pass
+        elif expected_type == "float":
+            try:
+                return float(value)
+            except (ValueError, TypeError):
+                pass
+        return value
+    
+    def _validate_type(self, param_name: str, value: Any, expected_type: str) -> Optional[str]:
+        """Validate a parameter value against its expected type (after conversion)."""
+        # Handle union types
+        if "|" in expected_type:
+            type_options = [t.strip() for t in expected_type.split("|")]
+            for type_option in type_options:
+                if self._validate_type(param_name, value, type_option) is None:
+                    return None
+            return f"Parameter '{param_name}' must be {' or '.join(type_options)}"
+        
+        # Simple type checks (values should already be converted)
+        if expected_type == "string":
+            if not isinstance(value, str):
+                return f"'{param_name}' must be a string, got {type(value).__name__}"
+        
+        elif expected_type == "integer":
+            if not isinstance(value, int) or isinstance(value, bool):
+                return f"'{param_name}' must be an integer, got {type(value).__name__}"
+        
+        elif expected_type == "float":
+            if not isinstance(value, (int, float)) or isinstance(value, bool):
+                return f"'{param_name}' must be a number, got {type(value).__name__}"
+        
+        elif expected_type == "boolean":
+            if not isinstance(value, bool):
+                return f"'{param_name}' must be a boolean, got {type(value).__name__}"
+        
+        elif expected_type == "ip_address":
+            import re
+            if not isinstance(value, str):
+                return f"'{param_name}' must be an IP address string"
+            ip_pattern = r'^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$'
+            if not re.match(ip_pattern, value):
+                return f"'{param_name}' must be a valid IP address, got '{value}'"
+        
+        elif expected_type == "domain_name":
+            import re
+            if not isinstance(value, str):
+                return f"'{param_name}' must be a domain name string"
+            domain_pattern = r'^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)*[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$'
+            if not re.match(domain_pattern, value) or len(value) > 253:
+                return f"'{param_name}' must be a valid domain name, got '{value}'"
+        
+        elif expected_type == "cidr":
+            import re
+            if not isinstance(value, str):
+                return f"'{param_name}' must be a CIDR notation string"
+            cidr_pattern = r'^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\/(?:[0-9]|[1-2][0-9]|3[0-2])$'
+            if not re.match(cidr_pattern, value):
+                return f"'{param_name}' must be valid CIDR notation, got '{value}'"
+        
+        elif expected_type == "ipv6_address":
+            if not isinstance(value, str):
+                return f"'{param_name}' must be an IPv6 address string"
+            if not is_valid_ipv6(value):
+                return f"'{param_name}' must be a valid IPv6 address, got '{value}'"
+        
+        return None
     
     def get_parameter_info(self, task_name: str) -> Dict[str, Any]:
-        """
-        Get parameter information for a template
-        
-        Args:
-            task_name: Name of the task template
-            
-        Returns:
-            Dictionary with parameter information
-        """
+        """Get parameter information for a template."""
         template = self.get_template(task_name)
         if not template:
             return {"error": f"Template '{task_name}' not found"}
@@ -271,108 +354,7 @@ class CustomTaskRegistry:
                 "example": param.example
             })
         
-        return {
-            "task_name": task_name,
-            "parameters": param_info
-        }
-    
-    def _validate_parameter_type(self, param_name: str, value: Any, expected_type: str) -> Optional[str]:
-        """
-        Validate a parameter value against its expected type(s)
-        
-        Supports union types using | separator (e.g., "ip_address | domain_name")
-        Uses recursive calls to handle union types
-        
-        Args:
-            param_name: Parameter name
-            value: Parameter value
-            expected_type: Expected data type(s), can be single or union with |
-            
-        Returns:
-            Error message if validation fails, None if valid
-        """
-        # Handle union types recursively (e.g., "ip_address | domain_name")
-        if "|" in expected_type:
-            type_options = [t.strip() for t in expected_type.split("|")]
-            errors = []
-            
-            # Recursively try each type option - if any passes, validation succeeds
-            for type_option in type_options:
-                error = self._validate_parameter_type(param_name, value, type_option)
-                if error is None:
-                    return None  # Validation passed for this type
-                errors.append(f"({type_option}: {error})")
-            
-            # All type options failed, return combined error
-            type_list = " or ".join(type_options)
-            return f"Parameter '{param_name}' must be {type_list}. Failed validations: {'; '.join(errors)}"
-        
-        # Single type validation
-        if expected_type == "string":
-            if not isinstance(value, str):
-                return f"must be a string, got {type(value).__name__}"
-        
-        elif expected_type == "integer":
-            if not isinstance(value, int):
-                try:
-                    int(value)
-                except (ValueError, TypeError):
-                    return f"must be an integer, got {type(value).__name__}"
-        
-        elif expected_type == "float":
-            if not isinstance(value, (int, float)):
-                try:
-                    float(value)
-                except (ValueError, TypeError):
-                    return f"must be a number, got {type(value).__name__}"
-        
-        elif expected_type == "boolean":
-            if not isinstance(value, bool):
-                if str(value).lower() not in ["true", "false", "1", "0"]:
-                    return f"must be a boolean (true/false), got {value}"
-        
-        elif expected_type == "ip_address":
-            import re
-            if not isinstance(value, str):
-                return f"must be an IP address string"
-            
-            ip_pattern = r'^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$'
-            if not re.match(ip_pattern, value):
-                return f"must be a valid IP address, got '{value}'"
-        
-        elif expected_type == "domain_name":
-            if not isinstance(value, str):
-                return f"must be a domain name string"
-            
-            # Domain name regex pattern
-            domain_pattern = r'^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)*[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$'
-            if not re.match(domain_pattern, value) or len(value) > 253:
-                return f"must be a valid domain name, got '{value}'"
-        
-        elif expected_type == "cidr":
-            import re
-            if not isinstance(value, str):
-                return f"must be a CIDR notation string"
-            
-            # CIDR pattern (e.g., 192.168.1.0/24)
-            cidr_pattern = r'^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\/(?:[0-9]|[1-2][0-9]|3[0-2])$'
-            if not re.match(cidr_pattern, value):
-                return f"must be valid CIDR notation (e.g., 10.0.24.0/24), got '{value}'"
-        
-        elif expected_type == "ipv6_address":
-            # Validate IPv6 addresses including link-local (fe80::/10)
-            if not isinstance(value, str):
-                return f"must be an IPv6 address string"
-            if not is_valid_ipv6(value):
-                return f"must be a valid IPv6 address (including link-local), got '{value}'"
-        
-        else:
-            # Unknown type, treat as string but warn
-            logger.warning(f"Unknown parameter type '{expected_type}' for parameter '{param_name}', treating as string")
-            if not isinstance(value, str):
-                return f"must be a string (unknown type '{expected_type}'), got {type(value).__name__}"
-        
-        return None
+        return {"task_name": task_name, "parameters": param_info}
     
     
     def _create_task_definition_from_dict(self, task_data: Dict[str, Any]) -> CustomTaskDefinition:

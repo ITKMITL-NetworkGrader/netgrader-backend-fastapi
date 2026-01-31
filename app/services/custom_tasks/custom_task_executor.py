@@ -310,8 +310,8 @@ class CustomTaskExecutor:
             if not task_definition:
                 raise ValueError(f"Custom task not found: {custom_task_id}")
             
-            # Validate parameters before execution
-            param_errors = self.registry.validate_parameters(custom_task_id, parameters)
+            # Prepare parameters: convert to proper types and validate in one pass
+            typed_parameters, param_errors = self.registry.prepare_parameters(custom_task_id, parameters)
             if param_errors:
                 raise ValueError(f"Parameter validation failed: {'; '.join(param_errors)}")
             
@@ -321,7 +321,7 @@ class CustomTaskExecutor:
             context = CustomTaskExecutionContext(
                 task_id=task_id,
                 device_id=device_id,
-                parameters=parameters,
+                parameters=typed_parameters,
                 variables={},
                 execution_results=[],
                 start_time=start_time,
