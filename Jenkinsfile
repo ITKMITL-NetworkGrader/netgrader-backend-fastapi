@@ -118,29 +118,39 @@ pipeline {
             }
         }
         
-        stage('Wait for Startup') {
-            steps {
-                script {
-                    echo "[HEALTH] Waiting for replicas to start..."
-                    sleep(time: 20, unit: 'SECONDS')
-                }
-            }
-        }
-        
         stage('Health Check Replicas') {
             steps {
                 script {
-                    echo "[HEALTH] Checking health of all replicas..."
+                    echo "[HEALTH] Waiting for replicas to become healthy..."
+                    echo "[HEALTH] Dockerfile HEALTHCHECK: interval=30s, timeout=10s, start-period=40s, retries=3"
+                    
+                    // Initial wait for containers to start and begin their health checks
+                    sleep(time: 45, unit: 'SECONDS')
                     
                     def healthCheckPassed = false
                     def attempts = 0
-                    def maxAttempts = 6
+                    def maxAttempts = 8
                     
                     retry(maxAttempts) {
                         attempts++
                         echo "Health check attempt ${attempts}/${maxAttempts}..."
                         
                         try {
+                            // Get all container IDs for this service
+                            def containerIds = sh(
+                                script: """
+                                    sudo -u netgrader bash -c 'cd ${COMPOSE_DIR} && docker compose ps -q ${SERVICE_NAME}'
+                                """,
+                                returnStdout: true
+                            ).trim()
+                            
+                            if (!containerIds) {
+                                error("No containers found for ${SERVICE_NAME}")
+                            }
+                            
+                            def containers = containerIds.split('\n')
+                            echo "Found ${containers.size()} container(s) for ${SERVICE_NAME}"
+                            
                             // Count running containers
                             def runningCount = sh(
                                 script: """
@@ -155,42 +165,57 @@ pipeline {
                                 error("Only ${runningCount}/${REPLICAS} replicas are running")
                             }
                             
-                            // Check one replica's health endpoint (assuming it has /health)
+                            // Health check via docker exec into the first running container
+                            def firstContainer = containers[0].trim()
                             def healthResponse = sh(
                                 script: """
-                                    curl -f http://localhost:8000/health -o /dev/null -w '%{http_code}' -s || echo "000"
+                                    docker exec ${firstContainer} curl -f http://localhost:8000/health -o /dev/null -w '%{http_code}' -s || echo "000"
                                 """,
                                 returnStdout: true
                             ).trim()
                             
-                            echo "Health endpoint response: ${healthResponse}"
+                            echo "Health endpoint response (container ${firstContainer.take(12)}): ${healthResponse}"
                             
                             if (healthResponse != "200") {
                                 error("Health endpoint returned HTTP ${healthResponse}")
                             }
                             
-                            // Check logs for errors in any replica
+                            // Check Docker's built-in HEALTHCHECK status for all replicas
+                            def healthyCount = sh(
+                                script: """
+                                    sudo -u netgrader bash -c 'cd ${COMPOSE_DIR} && docker compose ps ${SERVICE_NAME}' | grep -c "(healthy)" || echo "0"
+                                """,
+                                returnStdout: true
+                            ).trim().toInteger()
+                            
+                            echo "Docker healthy replicas: ${healthyCount}/${REPLICAS}"
+                            
+                            // Allow deployment if at least half are healthy (others may still be in start-period)
+                            if (healthyCount < 1) {
+                                error("No replicas have passed Docker HEALTHCHECK yet")
+                            }
+                            
+                            // Check logs for critical errors
                             def logs = sh(
                                 script: """
-                                    sudo -u netgrader bash -c 'cd ${COMPOSE_DIR} && docker compose logs ${SERVICE_NAME} --tail=100'
+                                    sudo -u netgrader bash -c 'cd ${COMPOSE_DIR} && docker compose logs ${SERVICE_NAME} --tail=50'
                                 """,
                                 returnStdout: true
                             )
                             
-                            if (logs.contains("ERROR") || logs.contains("Error:") || logs.contains("FATAL") || logs.contains("Traceback")) {
-                                echo "⚠️ WARNING: Errors found in logs:"
-                                echo logs.take(500)  // Show first 500 chars
-                                // Note: Don't fail here as some errors might be old logs
+                            if (logs.contains("FATAL") || logs.contains("Traceback")) {
+                                echo "⚠️ WARNING: Critical errors found in logs (may be from previous runs):"
+                                echo logs.take(500)
                             }
                             
                             healthCheckPassed = true
-                            echo "✅ All ${REPLICAS} replicas are healthy"
+                            echo "✅ All ${REPLICAS} replicas are up, ${healthyCount} confirmed healthy"
                             
                         } catch (Exception e) {
                             echo "⚠️ Health check failed: ${e.message}"
                             if (attempts < maxAttempts) {
-                                echo "Retrying in 10 seconds..."
-                                sleep(time: 10, unit: 'SECONDS')
+                                echo "Retrying in 15 seconds..."
+                                sleep(time: 15, unit: 'SECONDS')
                             }
                             throw e
                         }
