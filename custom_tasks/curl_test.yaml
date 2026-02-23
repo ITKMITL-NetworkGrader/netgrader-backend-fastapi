@@ -34,7 +34,7 @@ commands:
   - name: "curl_connectivity"
     action: "netmiko_send_command"
     parameters:
-      command: "timeout 4 curl -s -f {{target_url}}; echo \"EXIT_CODE:$?\""
+      command: "curl -sS -f -m 4 -o /dev/null {{target_url}}; echo \"EXIT_CODE:$?\""
     register: "curl_output"
   
   # Parse the exit code from the output

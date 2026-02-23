@@ -4,11 +4,11 @@ Task Template Testing Job Payloads
 
 Simple test jobs to validate custom task templates like:
 - advanced_ping_test
-- ospf_neighbor_check
-- interface_status_check
+- curl_test
+- console_terminal_test
+- dhcp_binding
 - vlan_verification
 - linux_service_health
-- routing_validation
 """
 
 import asyncio
@@ -108,44 +108,6 @@ VLAN_VERIFICATION_TEST_JOB = {
         {
             "id": "router1",
             "ip_address": "172.40.210.190",
-            "connection_type": "ssh",
-            "credentials": {
-                "username": "admin",
-                "password": "cisco"
-            },
-            "platform": "cisco_ios",
-            "role": "direct"
-        }
-    ],
-    "ip_mappings": {}
-}
-
-
-# Test Job 4: Interface Status Check Template
-INTERFACE_STATUS_TEST_JOB = {
-    "job_id": "test_interface_status_001",
-    "student_id": "student_test",
-    "lab_id": "interface_test_lab",
-    "part": {
-        "part_id": "part1",
-        "title": "Interface Status Verification",
-        "network_tasks": [
-            {
-                "task_id": "check_interface_status",
-                "name": "Check interface status",
-                "template_name": "interface_status_check",  # Custom template
-                "execution_device": "router1",
-                "parameters": {},
-                "test_cases": [],
-                "points": 15
-            }
-        ],
-        "groups": []
-    },
-    "devices": [
-        {
-            "id": "router1",
-            "ip_address": "10.70.38.101",
             "connection_type": "ssh",
             "credentials": {
                 "username": "admin",
@@ -271,84 +233,6 @@ COMBINED_TEMPLATES_TEST_JOB = {
     "ip_mappings": {}
 }
 
-VLAN_TEST_JOB = {
-    "job_id": "test_vlan_getter",
-    "student_id": "student_test",
-    "lab_id": "vlan_test_lab",
-    "part": {
-        "part_id": "part1",
-        "title": "VLAN Data Verification",
-        "network_tasks": [
-            {
-                "task_id": "check_vlan_data",
-                "name": "Check VLAN data",
-                "template_name": "vlan_validation",
-                "execution_device": "switch1",
-                "parameters": {
-                    "interface_name": "GigabitEthernet0/1",
-                    "expected_vlan_id": 210
-                },
-                "test_cases": [],
-                "points": 15
-            }
-        ],
-        "groups": []
-    },
-    "devices": [
-        {
-            "id": "switch1",
-            "ip_address": "172.40.210.178",
-            "connection_type": "ssh",
-            "credentials": {
-                "username": "admin",
-                "password": "cisco"
-            },
-            "platform": "cisco_ios",
-            "role": "direct"
-        }
-    ],
-    "ip_mappings": {}
-}
-
-ROUTE_TEST_JOB = {
-    "job_id": "test_route_getter",
-    "student_id": "student_test",
-    "lab_id": "route_test_lab",
-    "part": {
-        "part_id": "part1",
-        "title": "Route Data Verification",
-        "network_tasks": [
-            {
-                "task_id": "check_route_data",
-                "name": "Check Route data",
-                "template_name": "routing_validation",
-                "execution_device": "router1",
-                "parameters": {
-                    "target_network": "0.0.0.0/0",
-                    "expected_next_hop": "10.70.38.1",
-                },
-                "test_cases": [],
-                "points": 15
-            }
-        ],
-        "groups": []
-    },
-    "devices": [
-        {
-            "id": "router1",
-            "ip_address": "10.70.38.101",
-            "connection_type": "ssh",
-            "credentials": {
-                "username": "admin",
-                "password": "cisco"
-            },
-            "platform": "cisco_ios",
-            "role": "direct"
-        }
-    ],
-    "ip_mappings": {}
-}
-
 DHCP_TEST_JOB = {
     "job_id": "test_dhcp",
     "student_id": "student_test",
@@ -408,12 +292,12 @@ CONSOLE_TERMINAL_TEST_JOB = {
             {
                 "task_id": "check_console_terminal",
                 "name": "Check Console Terminal",
-                "template_name": "cisco_ios_ping",
+                "template_name": "curl_test",
                 "execution_device": "test",
                 "parameters": {
-                    "target_ip": "1.1.1.1",
+                    "target_url": "10.70.38.253",
                     # "target_port": 22,
-                    "expect_success": False,
+                    "expect_success": "false",
                     # "filename": "uia-confg"
                     # "ping_count": "3",
                     # "packet_received": "3",
@@ -434,10 +318,10 @@ CONSOLE_TERMINAL_TEST_JOB = {
         {
             "id": "test",
             "ip_address": "10.70.38.10",
-            "port": 5003,
+            "port": 5345,
             "connection_type": "telnet",
-            "platform": "generic_termserver_telnet",
-            "device_os": "cisco_ios",
+            "platform": "generic_telnet",
+            "device_os": "linux",
             "role": "direct"
         },
         # {
@@ -534,11 +418,8 @@ async def main():
     tests = [
         # (ADVANCED_PING_TEST_JOB, "Advanced Ping Test"),
         # (VLAN_VERIFICATION_TEST_JOB, "VLAN Verification"),
-        # (INTERFACE_STATUS_TEST_JOB, "Interface Status Check"),
         # (LINUX_SERVICE_TEST_JOB, "Linux Service Health"),
         # (COMBINED_TEMPLATES_TEST_JOB, "Combined Templates"),
-        # (VLAN_TEST_JOB, "VLAN NAPALM Get Test"),
-        # (ROUTE_TEST_JOB, "Routing Validation Test"),
         # (DHCP_TEST_JOB , "DHCP Binding Test"),
         (CONSOLE_TERMINAL_TEST_JOB, "Console Terminal Test")
 

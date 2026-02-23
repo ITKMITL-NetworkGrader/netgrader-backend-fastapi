@@ -12,13 +12,14 @@ import json
 import time
 import yaml
 from typing import Dict, Any, List, Optional, Union
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 
 try:
     import textfsm
 except ImportError:  # pragma: no cover - optional dependency in some environments
     textfsm = None
-from jinja2 import Environment, StrictUndefined, TemplateError
+from jinja2 import StrictUndefined, TemplateError
+from jinja2.sandbox import SandboxedEnvironment
 
 from .custom_task_registry import (
     CustomTaskDefinition, 
@@ -32,7 +33,7 @@ from app.schemas.models import TaskStatus
 logger = logging.getLogger(__name__)
 
 
-_jinja_env = Environment(
+_jinja_env = SandboxedEnvironment(
     undefined=StrictUndefined,
     trim_blocks=True,
     lstrip_blocks=True,
@@ -50,9 +51,9 @@ class CustomTaskExecutionContext:
     device_id: str
     parameters: Dict[str, Any]
     variables: Dict[str, Any]  # Variables set during execution (register values)
-    execution_results: List[Dict[str, Any]]  # Results from each command
     start_time: float
     points_possible: float
+    _raw_metas: Dict[int, Any] = field(default_factory=dict)  # Raw parser metadata keyed by command index
 
 
 @dataclass 
@@ -323,7 +324,6 @@ class CustomTaskExecutor:
                 device_id=device_id,
                 parameters=typed_parameters,
                 variables={},
-                execution_results=[],
                 start_time=start_time,
                 points_possible=parameters.get("points", task_definition.points)
             )
@@ -335,7 +335,8 @@ class CustomTaskExecutor:
                     logger.debug(f"Executing command {i+1}/{len(task_definition.commands)}: {command.name}")
                     
                     command_result = await self._execute_command(
-                        command, context, task_definition.connection_type
+                        command, context,
+                        command_index=i
                     )
                     command_results.append(command_result)
                     
@@ -344,6 +345,15 @@ class CustomTaskExecutor:
                         # Store the actual result, not the full command result structure
                         if command_result.get("success", False):
                             actual_result = command_result.get("result", command_result.get("stdout", ""))
+                            if command.register_as == "raw":
+                                if i in context._raw_metas:
+                                    actual_result = context._raw_metas[i]
+                                else:
+                                    raise Exception(
+                                        f"Command '{command.name}': register_as='raw' but no raw metadata available "
+                                        f"for action '{command.action}'. Only 'parse_output' and 'netmiko_send_command' "
+                                        f"produce raw metadata."
+                                    )
                             context.variables[command.register] = actual_result
                         else:
                             context.variables[command.register] = command_result.get("stderr", "")
@@ -526,17 +536,19 @@ class CustomTaskExecutor:
                 stderr=f"Custom task execution failed: {str(e)}"
             )
     
+    _TUPLE_RESULT_ACTIONS = {"parse_output", "netmiko_send_command"}
+
     async def _execute_command(self, 
                              command: CustomTaskCommand,
                              context: CustomTaskExecutionContext,
-                             connection_type) -> Dict[str, Any]:
+                             command_index: int = 0) -> Dict[str, Any]:
         """
         Execute a single command within a custom task
         
         Args:
             command: Command to execute
             context: Execution context
-            connection_type: Type of connection to use
+            command_index: Index of this command in the sequence
             
         Returns:
             Dictionary with command execution result
@@ -545,9 +557,7 @@ class CustomTaskExecutor:
             # Resolve parameters with context variables and task parameters
             resolved_params = self._resolve_parameters(command, context)
             # Execute based on action type
-            if command.action == "napalm_get":
-                result = await self._execute_napalm_command(command, context, resolved_params)
-            elif command.action == "netmiko_send_command":
+            if command.action == "netmiko_send_command":
                 result = await self._execute_netmiko_command(command, context, resolved_params)
             elif command.action == "ping":
                 result = await self._execute_ping_command(command, context, resolved_params)
@@ -558,6 +568,13 @@ class CustomTaskExecutor:
             else:
                 raise ValueError(f"Unsupported command action: {command.action}")
             
+            # Unpack ONLY for actions that return (flat, raw) tuples
+            if command.action in self._TUPLE_RESULT_ACTIONS:
+                flat_result, raw_meta = result
+                if command.register_as == "raw":
+                    context._raw_metas[command_index] = raw_meta
+                result = flat_result
+
             return {
                 "command_name": command.name,
                 "command_action": command.action,
@@ -577,50 +594,7 @@ class CustomTaskExecutor:
                 "stderr": str(e)
             }
     
-    async def _execute_napalm_command(self, 
-                                    command: CustomTaskCommand,
-                                    context: CustomTaskExecutionContext,
-                                    resolved_params: Dict[str, Any]) -> Any:
-        """Execute NAPALM command through Nornir service"""
-        napalm_params = {
-            "operation": resolved_params.get("getter", "get_interfaces"),
-            "points": context.points_possible  # Use context points which already has the override logic
-        }
-        
-        # Add any additional parameters
-        for key, value in resolved_params.items():
-            if key not in ["getter", "points"]:
-                napalm_params[key] = value
-        
-        nornir_result = await self.nornir_service.execute_napalm_task(
-            task_id=f"{context.task_id}_{command.name}",
-            device_id=context.device_id,
-            parameters=napalm_params
-        )
-        
-        # Extract the actual data from Nornir result
-        if nornir_result.status == TaskStatus.PASSED:
-            payload = nornir_result.stdout
-            if isinstance(payload, (dict, list)):
-                return payload
 
-            # Attempt to parse structured data from string outputs
-            if isinstance(payload, str):
-                try:
-                    return json.loads(payload)
-                except (json.JSONDecodeError, TypeError):
-                    pass
-
-                try:
-                    parsed_yaml = yaml.safe_load(payload)
-                    if isinstance(parsed_yaml, (dict, list)):
-                        return parsed_yaml
-                except yaml.YAMLError:
-                    pass
-
-            return payload
-        else:
-            raise Exception(f"NAPALM command failed: {nornir_result.stderr}")
     
     async def _execute_netmiko_command(self,
                                      command: CustomTaskCommand,
@@ -653,14 +627,14 @@ class CustomTaskExecutor:
 
         if nornir_result.debug_info:
             structured = nornir_result.debug_info.get("structured_output")
-            raw_output = nornir_result.debug_info.get("raw_output")
-            if structured is not None:
-                return {
-                    "raw_output": raw_output or nornir_result.stdout,
-                    "structured_output": structured
-                }
+            raw_output = nornir_result.debug_info.get("raw_output") or nornir_result.stdout
+        else:
+            structured = None
+            raw_output = nornir_result.stdout
 
-        return nornir_result.stdout
+        flat = structured if structured is not None else raw_output
+        raw = {"raw_output": raw_output, "structured_output": structured}
+        return (flat, raw)
     
     async def _execute_ping_command(self, 
                                   command: CustomTaskCommand,
@@ -686,59 +660,67 @@ class CustomTaskExecutor:
     def _execute_parse_command(self, 
                              command: CustomTaskCommand,
                              context: CustomTaskExecutionContext,
-                             resolved_params: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute output parsing command with pluggable parsers."""
+                             resolved_params: Dict[str, Any]) -> Any:
+        """Execute output parsing command with pluggable parsers.
+        
+        Returns a (flat, raw) tuple for all parser types.
+        """
         input_text = resolved_params.get("input", "")
         parser_type = (resolved_params.get("parser") or "regex").lower()
 
         if parser_type == "regex":
             pattern = resolved_params.get("pattern", "")
             if not pattern:
-                return {"input": input_text, "parsed": input_text, "parser": "regex"}
+                raise Exception("Regex parser requires a 'pattern' parameter")
+
+            if not isinstance(input_text, str):
+                raise Exception(
+                    f"Regex parser requires string input, got {type(input_text).__name__}. "
+                    "Use a Jinja parse step to convert structured data first."
+                )
 
             try:
                 matches = re.findall(pattern, input_text, re.MULTILINE | re.IGNORECASE)
             except re.error as exc:
                 raise Exception(f"Invalid regex pattern '{pattern}': {exc}") from exc
 
-            return {
-                "input": input_text,
-                "pattern": pattern,
+            flat = {
                 "matches": matches,
                 "match_count": len(matches),
                 "first_match": matches[0] if matches else None,
-                "parser": "regex"
             }
+            raw = {**flat, "input": input_text, "pattern": pattern}
+            return (flat, raw)
 
         if parser_type == "textfsm":
             if textfsm is None:
                 raise Exception("TextFSM parser requires the 'textfsm' package to be installed")
 
-            template_path = resolved_params.get("template_path")
             template_content = resolved_params.get("template")
-
-            if not template_content and template_path:
-                try:
-                    with open(template_path, "r", encoding="utf-8") as template_file:
-                        template_content = template_file.read()
-                except OSError as exc:
-                    raise Exception(f"Unable to load TextFSM template '{template_path}': {exc}") from exc
-
             if not template_content:
-                raise Exception("TextFSM parser requires 'template' or 'template_path' parameter")
+                raise Exception("TextFSM parser requires a 'template' parameter")
+
+            if input_text is None:
+                input_text = ""
+            elif not isinstance(input_text, str):
+                raise Exception(
+                    f"TextFSM parser requires string input, got {type(input_text).__name__}. "
+                    "Use a Jinja parse step to convert structured data first."
+                )
 
             fsm = textfsm.TextFSM(io.StringIO(template_content))
-            raw_rows = fsm.ParseText(input_text or "")
+            raw_rows = fsm.ParseText(input_text)
             structured_rows = [dict(zip(fsm.header, row)) for row in raw_rows]
 
-            return {
+            flat = structured_rows
+            raw = {
                 "input": input_text,
-                "parser": "textfsm",
                 "template_header": list(fsm.header),
                 "records": structured_rows,
                 "raw_matches": raw_rows,
-                "match_count": len(structured_rows)
+                "match_count": len(structured_rows),
             }
+            return (flat, raw)
 
         if parser_type == "jinja":
             template_source = (
@@ -771,12 +753,9 @@ class CustomTaskExecutor:
                         except yaml.YAMLError:
                             structured = rendered
 
-            return {
-                "input": input_text,
-                "parser": "jinja",
-                "rendered": rendered,
-                "data": structured
-            }
+            flat = structured
+            raw = {"input": input_text, "rendered": rendered, "data": structured}
+            return (flat, raw)
 
         raise Exception(f"Unsupported parser type '{parser_type}' for parse_output command")
     

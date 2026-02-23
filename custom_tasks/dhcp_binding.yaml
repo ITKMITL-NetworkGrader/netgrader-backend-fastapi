@@ -26,12 +26,12 @@ commands:
       parser: "jinja"
       input: "{{binding_output}}"
       template: |
-        {% set bindings = input.get('structured_output', []) %}
+        {% set bindings = input if input is sequence and input is not string and input is not mapping else [] %}
         leased_ips: {{ bindings[0].ip_address if bindings | length > 0 else [] }}
     register: "parsed_binding"
 
 validation:
-  - field: "parsed_binding.data.leased_ips"
+  - field: "parsed_binding.leased_ips"
     condition: "equals"
     value: "{{expected_lease_ip}}"
     description: "Binding table should list the expected IP address"

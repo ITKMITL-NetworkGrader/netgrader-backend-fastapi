@@ -34,6 +34,7 @@ class Config:
     
     # Custom Task Configuration
     CUSTOM_TASK_REGISTRY_DIR: str = os.getenv("CUSTOM_TASK_REGISTRY_DIR", "custom_tasks")
+    STRICT_MODE: bool = os.getenv("STRICT_MODE", "true").lower() == "true"
 
     # MinIO Configuration
     MINIO_ENDPOINT: str = os.getenv("MINIO_ENDPOINT", "localhost")
