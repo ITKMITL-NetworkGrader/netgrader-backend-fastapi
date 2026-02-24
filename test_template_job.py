@@ -55,7 +55,6 @@ ADVANCED_PING_TEST_JOB = {
         {
             "id": "router1",
             "ip_address": "10.70.38.101",
-            "connection_type": "ssh",
             "credentials": {
                 "username": "admin",
                 "password": "cisco"
@@ -108,7 +107,6 @@ VLAN_VERIFICATION_TEST_JOB = {
         {
             "id": "router1",
             "ip_address": "172.40.210.190",
-            "connection_type": "ssh",
             "credentials": {
                 "username": "admin",
                 "password": "cisco"
@@ -159,7 +157,6 @@ LINUX_SERVICE_TEST_JOB = {
         {
             "id": "server1",
             "ip_address": "172.40.117.34",
-            "connection_type": "ssh",
             "credentials": {
                 "username": "ubuntu",
                 "password": "ubuntu"
@@ -210,7 +207,6 @@ COMBINED_TEMPLATES_TEST_JOB = {
         {
             "id": "server1",
             "ip_address": "172.40.210.130",
-            "connection_type": "ssh",
             "credentials": {
                 "username": "ubuntu",
                 "password": "ubuntu"
@@ -221,7 +217,6 @@ COMBINED_TEMPLATES_TEST_JOB = {
         {
             "id": "router1",
             "ip_address": "10.70.38.101",
-            "connection_type": "ssh",
             "credentials": {
                 "username": "admin",
                 "password": "cisco"
@@ -260,7 +255,6 @@ DHCP_TEST_JOB = {
             "id": "router1",
             "ip_address": "10.70.38.7",
             "port": 5023,
-            "connection_type": "telnet",
             "platform": "generic_termserver_telnet",
             "device_os": "cisco_ios",
             "role": "direct"
@@ -269,7 +263,6 @@ DHCP_TEST_JOB = {
         #     "id": "router1",
         #     "ip_address": "10.70.38.7",
         #     "port": 5023,
-        #     "connection_type": "telnet",
         #     "credentials": {
         #         "username": "admin",
         #         "password": "cisco"
@@ -319,7 +312,6 @@ CONSOLE_TERMINAL_TEST_JOB = {
             "id": "test",
             "ip_address": "10.70.38.10",
             "port": 5345,
-            "connection_type": "telnet",
             "platform": "generic_telnet",
             "device_os": "linux",
             "role": "direct"
@@ -328,7 +320,6 @@ CONSOLE_TERMINAL_TEST_JOB = {
         #     "id": "test",
         #     "ip_address": "10.70.38.7",
         #     "port": 5058,
-        #     "connection_type": "telnet",
         #     "platform": "generic_termserver_telnet",
         #     "device_os": "linux",
         #     "role": "direct"
@@ -336,7 +327,6 @@ CONSOLE_TERMINAL_TEST_JOB = {
         # {
         #     "id": "test",
         #     "ip_address": "10.70.38.101",
-        #     "connection_type": "telnet",
         #     "credentials": {
         #         "username": "admin",
         #         "password": "cisco"

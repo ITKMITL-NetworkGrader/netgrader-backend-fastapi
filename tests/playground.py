@@ -2,7 +2,7 @@
 
 import asyncio
 
-from app.schemas.models import Device, ConnectionType
+from app.schemas.models import Device
 from app.services.grading.nornir_grading_service import NornirGradingService
 from app.services.pipeline.snapshot_collector import SnapshotCollector
 from app.services.connectivity.api_client import APIClient
@@ -23,21 +23,18 @@ async def main():
             ip_address="172.40.210.130",
             credentials={"username": "ubuntu", "password": "ubuntu"},
             platform="linux",
-            connection_type=ConnectionType.SSH,
         ),
         Device(
             id="ubuntu2",
             ip_address="172.40.117.34",
             credentials={"username": "ubuntu", "password": "ubuntu"},
             platform="linux",
-            connection_type=ConnectionType.SSH,
         ),
         Device(
             id="router1",
             ip_address="10.70.38.101",
             credentials={"username": "admin", "password": "cisco"},
             platform="cisco_router",
-            connection_type=ConnectionType.NETWORK_CLI,
         ),
     ]
 

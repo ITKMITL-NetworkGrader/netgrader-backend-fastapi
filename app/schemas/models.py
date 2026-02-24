@@ -7,10 +7,6 @@ class ExecutionMode(str, Enum):
     STATEFUL = "stateful"     # Persistent connection across tasks in sequence
     SHARED = "shared"         # Shared connection pool for device
 
-class ConnectionType(str, Enum):
-    NETWORK_CLI = "network_cli"
-    SSH = "ssh"
-    LOCAL = "local"
 
 class TaskStatus(str, Enum):
     PASSED = "passed"
@@ -32,7 +28,6 @@ class Device(BaseModel):
     id: str
     ip_address: str
     port: Optional[int] = 22
-    connection_type: str
     credentials: Dict[str, str] = Field(default_factory=dict)
     platform: Optional[str] = None
     device_os: Optional[str] = Field(None, description="Actual device OS for parsing (e.g., 'cisco_ios', 'linux'). If None, derived from platform.")

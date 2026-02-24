@@ -14,7 +14,7 @@ A custom YAML template consists of the following sections:
 # Metadata Section
 task_name: "template_identifier"
 description: "Human-readable description"
-connection_type: "netmiko"          # netmiko, napalm, ssh, or command
+connection_type: "netmiko"          # netmiko, ssh, or command
 author: "Author Name"
 version: "1.0.0"
 points: 10
@@ -56,7 +56,7 @@ validation:
 |-------|------|----------|-------------|
 | `task_name` | string | ✅ | Unique identifier for the template (alphanumeric, underscores, hyphens only) |
 | `description` | string | ✅ | Human-readable description of what the task does |
-| `connection_type` | enum | ✅ | Connection method: `netmiko`, `napalm`, `ssh`, or `command` |
+| `connection_type` | enum | ✅ | Connection method: `netmiko`, `ssh`, or `command` |
 | `author` | string | ❌ | Template author name |
 | `version` | string | ❌ | Template version (default: `1.0.0`) |
 | `points` | integer | ❌ | Maximum points for this task (default: `10`) |
@@ -66,7 +66,6 @@ validation:
 | Type | Description | Compatible Actions |
 |------|-------------|-------------------|
 | `netmiko` | CLI-based device interaction via Netmiko | `netmiko_send_command`, `ping`, `parse_output` |
-| `napalm` | Vendor-agnostic API via NAPALM | `napalm_get`, `parse_output` |
 | `ssh` | Generic SSH connection | `netmiko_send_command`, `ping`, `parse_output` |
 | `command` | Direct command execution | `netmiko_send_command`, `parse_output` |
 
@@ -189,32 +188,7 @@ Execute a CLI command on the device using Netmiko.
 | `execution_mode` | string | ❌ | Execution mode configuration |
 | `connection_timeout` | integer | ❌ | Connection timeout in seconds |
 
-#### 2. `napalm_get`
-
-Retrieve structured data using NAPALM getters.
-
-```yaml
-- name: "get_routing_table"
-  action: "napalm_get"
-  parameters:
-    getter: "get_route_to"
-    destination: "{{target_network}}"
-  register: "routing_data"
-```
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `getter` | string | ✅ | NAPALM getter method name |
-| Additional params | varies | ❌ | Getter-specific parameters |
-
-**Common NAPALM Getters:**
-- `get_interfaces` - Interface information
-- `get_interfaces_ip` - IP addresses on interfaces
-- `get_route_to` - Routing table entries
-- `get_bgp_neighbors` - BGP neighbor information
-- `get_facts` - Device facts
-
-#### 3. `ping`
+#### 2. `ping`
 
 Execute a ping test from the device.
 
@@ -232,7 +206,7 @@ Execute a ping test from the device.
 | `target_ip` | string | ✅ | IP address or hostname to ping |
 | `ping_count` | integer | ❌ | Number of ping packets (default: 3) |
 
-#### 4. `parse_output`
+#### 3. `parse_output`
 
 Parse text output using regex, TextFSM, or Jinja2.
 
@@ -306,7 +280,7 @@ data:                             # Parsed as YAML/JSON if possible
   next_hop: "10.0.0.1"
 ```
 
-#### 5. `custom_script`
+#### 4. `custom_script`
 
 Placeholder for custom script execution (future feature).
 
@@ -520,54 +494,7 @@ validation:
     description: "Switchport must be enabled"
 ```
 
-### Example 3: Routing Validation with NAPALM
-
-```yaml
-task_name: "routing_validation"
-description: "Validate routing table entries"
-connection_type: "napalm"
-author: "NetGrader Team"
-version: "1.0.0"
-points: 20
-
-parameters:
-  - name: "target_network"
-    datatype: "string"
-    description: "Network to check (CIDR format)"
-    required: true
-    example: "10.0.0.0/8"
-  - name: "expected_next_hop"
-    datatype: "ip_address"
-    description: "Expected next-hop IP"
-    required: true
-    example: "192.168.1.1"
-
-commands:
-  - name: "get_route"
-    action: "napalm_get"
-    parameters:
-      getter: "get_route_to"
-      destination: "{{target_network}}"
-    register: "routing_data"
-  
-  - name: "extract_next_hop"
-    action: "parse_output"
-    parameters:
-      parser: "jinja"
-      input: "{{routing_data}}"
-      template: |
-        {% set entries = (input.get(parameters.target_network) or []) | map(attribute='next_hop') | list %}
-        next_hop: {{ entries[0] if entries else None }}
-    register: "next_hop_info"
-
-validation:
-  - field: "next_hop_info.data.next_hop"
-    condition: "equals"
-    value: "{{expected_next_hop}}"
-    description: "Route next-hop must match expected value"
-```
-
-### Example 4: Linux Service Health Check
+### Example 3: Linux Service Health Check
 
 ```yaml
 task_name: "linux_service_health"
@@ -631,7 +558,6 @@ netgrader-backend-fastapi/
 ├── custom_tasks/
 │   ├── advanced_ping_test.yaml
 │   ├── vlan_verification.yaml
-│   ├── routing_validation.yaml
 │   └── linux_service_health.yaml
 ```
 

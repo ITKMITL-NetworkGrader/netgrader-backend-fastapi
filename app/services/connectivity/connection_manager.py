@@ -115,10 +115,8 @@ class ConnectionManager:
                 netmiko_device_type = "linux"
             elif netmiko_device_type == "linux_telnet":
                 netmiko_device_type = "generic_telnet"
-            # Determine NAPALM transport
-            napalm_transport = "ssh"
-            if "telnet" in device.connection_type.lower() or "telnet" in netmiko_device_type.lower():
-                napalm_transport = "telnet"
+
+            is_telnet_device = "telnet" in device_type.lower() or "telnet" in netmiko_device_type.lower()
             host_config = {
                 'hostname': device.ip_address,
                 'port': device.port,
@@ -135,26 +133,20 @@ class ConnectionManager:
                         'extras': {
                             'device_type': netmiko_device_type
                         }
-                    },
-                    'napalm': {
-                        'extras': {
-                            'optional_args': {
-                                'transport': napalm_transport
-                            }
-                        }
                     }
                 }
             }
 
-            # Fallback to generic driver for NAPALM if using Telnet
-            # Many NAPALM drivers (like ios) assume SSH by default or have limited Telnet support
-            # This forces the use of the generic driver which might handle basic CLI interaction better via Netmiko
-            if napalm_transport == "telnet" and platform == "ios":
-                 # We keep platform='ios' for Netmiko but for NAPALM we might need to be careful
-                 # Actually, napalm-ios supports telnet via optional_args, so we keep it as is.
-                 # But we ensure the driver name is correct.
-                 pass
-            
+            # NAPALM is SSH-only; do not configure it for telnet platforms.
+            if not is_telnet_device:
+                host_config['connection_options']['napalm'] = {
+                    'extras': {
+                        'optional_args': {
+                            'transport': 'ssh'
+                        }
+                    }
+                }
+
             # Add to appropriate groups
             for group, device_ids in self.device_groups.items():
                 if device.id in device_ids:
@@ -186,15 +178,6 @@ class ConnectionManager:
                                 'banner_timeout': 15,
                                 'blocking_timeout': 20,
                                 'conn_timeout': 10
-                            }
-                        },
-                        'napalm': {
-                            'driver': 'ios',
-                            'timeout': 30,
-                            'extras': {
-                                'optional_args': {
-                                    'transport': 'telnet'
-                                }
                             }
                         }
                     }

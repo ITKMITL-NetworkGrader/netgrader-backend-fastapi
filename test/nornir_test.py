@@ -1,6 +1,5 @@
 from nornir import InitNornir
 from nornir_netmiko import netmiko_send_command, netmiko_send_config
-from nornir_napalm.plugins.tasks import napalm_get, napalm_configure
 from nornir_utils.plugins.functions import print_result
 from nornir.core.filter import F
 
@@ -39,15 +38,6 @@ def execute_task_workflow(nr: InitNornir, task_definitions: list) -> dict:
                 name=task_name
             )
             results[task_name] = result
-
-        elif task_type == "napalm_get":
-            getters = task_def.get("getters", ["facts"])
-            result = filtered_nr.run(
-                task=napalm_get,
-                getters=getters,
-                name=task_name
-            )
-            results[task_name] = result
     
     return results
 
@@ -75,23 +65,6 @@ def main():
             "commands": [
                 "ping 1.1.1.1"
             ]
-        },
-        {
-            "name": "get_device_facts",
-            "type": "napalm_get",
-            "filter": {
-                "group": "cisco_devices"
-            },
-            "getters": ["facts",              # Basic device facts
-    "interfaces",         # Interface status and config
-    "interfaces_ip",      # IP addresses on interfaces
-    "interfaces_counters", # Interface statistics
-    "arp_table",         # ARP table entries
-    "mac_address_table", # MAC address table
-    "route_to",       # Routing table (if supported)
-    "bgp_neighbors",     # BGP neighbor information
-    "lldp_neighbors",    # LLDP neighbor information
-]
         }
     ]
     

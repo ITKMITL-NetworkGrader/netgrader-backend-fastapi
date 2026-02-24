@@ -50,9 +50,11 @@ class SnapshotCollector:
                 logger.warning("Device %s not registered with nornir service", device_id)
                 continue
 
+            device_platform = (device.platform or "").lower()
+
             key_prefix = f"snapshots/{self._build_prefix(course_name, lab_name, student_id)}"
 
-            if "linux" in device.device_type.lower():
+            if "linux" in device_platform:
                 host_payload = await self._collect_host_data(device_id)
                 if not host_payload:
                     continue
@@ -74,6 +76,16 @@ class SnapshotCollector:
 
     async def _collect_network_config(self, device_id: str) -> Optional[str]:
         try:
+            device = self.grading_service.connection_manager.devices.get(device_id)
+            device_platform = (device.platform or "").lower() if device else ""
+            if "telnet" in device_platform:
+                logger.info(
+                    "Skipping NAPALM config snapshot for %s (platform=%s): NAPALM is SSH-only",
+                    device_id,
+                    device_platform,
+                )
+                return None
+
             async with self.grading_service.connection_manager.get_connection(
                 device_id=device_id,
                 connection_mode=ExecutionMode.ISOLATED,

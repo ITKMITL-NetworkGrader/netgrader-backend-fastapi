@@ -318,9 +318,9 @@ class SNMPDetector:
         """Determine optimal plugins based on platform"""
         
         plugin_mapping = {
-            "cisco_ios_router": ["napalm", "ping", "command"],
-            "cisco_ios_switch": ["napalm", "ping", "command"],
-            "cisco_ios": ["napalm", "ping", "command"],  # fallback for generic cisco
+            "cisco_ios_router": ["ping", "command"],
+            "cisco_ios_switch": ["ping", "command"],
+            "cisco_ios": ["ping", "command"],  # fallback for generic cisco
             "linux": ["command", "ping"],
             "windows": ["ping", "command"],
             "generic": ["ping", "command"],
@@ -349,7 +349,7 @@ class SNMPDetector:
                 result.platform = device_context.get('platform', 'generic')
                 if result.platform.startswith('cisco'):
                     result.vendor = "Cisco"
-                    result.optimal_plugins = ["napalm", "ping", "command"]
+                    result.optimal_plugins = ["ping", "command"]
                 elif result.platform == 'linux':
                     result.vendor = "Linux"
                     result.optimal_plugins = ["command", "ping"]

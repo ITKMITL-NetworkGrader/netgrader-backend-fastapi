@@ -10,7 +10,7 @@ import time
 from datetime import datetime
 from typing import Dict, Any
 # Import existing models and services
-from app.schemas.models import GradingJob, TestResult, GradingResult, Device, NetworkTask, ProgressUpdate, DebugInfo, TaskGroup, GroupResult, TaskResult, TaskStatus, ConnectionType
+from app.schemas.models import GradingJob, TestResult, GradingResult, Device, NetworkTask, ProgressUpdate, DebugInfo, TaskGroup, GroupResult, TaskResult, TaskStatus
 from app.services.connectivity.api_client import APIClient as ApiClient
 from app.services.grading.scoring_service import ScoringService
 
@@ -115,7 +115,6 @@ class SimpleGradingService:
             platform=device_type,
             device_os=device.device_os,  # Preserve device_os field
             port=device.port if device.port else 22,
-            connection_type=device.connection_type
         )
     
     def _format_error(self, raw_output: str) -> str:
@@ -425,11 +424,9 @@ class SimpleGradingService:
             "network_ping": "ping",
             "linux_ip_check": "command",
             "linux_remote_ssh": "ssh_test",  # Use specialized SSH connectivity test
-            "network_ip_int": "napalm",
             "service_check": "command",
             "dhcp_check": "command",
-            "route_check": "command",
-            "network_acls_int": "napalm"
+            "route_check": "command"
         }
         
         # Check if this is a global custom task template (direct task name)
@@ -459,21 +456,6 @@ class SimpleGradingService:
             custom_task_id = task.template_name[7:]  # Remove 'custom_' prefix
             enhanced["custom_task_id"] = custom_task_id
             return enhanced
-        
-        # Configure NAPALM operations for network interface checking
-        elif task.template_name == "network_ip_int":
-            # Use NAPALM to get interface information
-            enhanced["operation"] = "get_interfaces_ip" if parameters.get("check_ip", False) else "get_interfaces"
-            # Keep interface name and expected_ip as they are
-            if "interface" in parameters:
-                enhanced["interface"] = parameters["interface"]
-            if "expected_ip" in parameters:
-                enhanced["expected_ip"] = parameters["expected_ip"]
-                enhanced["check_ip"] = True
-        
-        # Configure NAPALM operations for network ACL checking
-        elif task.template_name == "network_acls_int":
-            enhanced["operation"] = "get_interfaces"
         
         # Configure commands for SSH/command tests
         # elif task.template_name == "linux_remote_ssh":
@@ -664,8 +646,8 @@ class SimpleGradingService:
         
         # Check if task types are supported
         supported_templates = ["network_ping", "linux_ip_check", "linux_remote_ssh", 
-                              "network_ip_int", "service_check", "dhcp_check", 
-                              "route_check", "network_acls_int"]
+                              "service_check", "dhcp_check", 
+                              "route_check"]
         for task in job.part.network_tasks:
             # Allow built-in templates, global custom templates, or legacy prefixed custom templates
             if not (task.template_name in supported_templates or 
@@ -713,7 +695,6 @@ class SimpleGradingService:
             ip_address="localhost",
             credentials={"username": "test", "password": "test"},
             platform="linux",
-            connection_type=ConnectionType.LOCAL
         )
         await self.grader.add_device(localhost)
         
@@ -793,7 +774,7 @@ class SimpleGradingService:
                         "device_type": "cisco_router",
                         "os_version": "Unknown",
                         "snmp_enabled": False,
-                        "optimal_plugins": ["napalm", "ping", "command"],
+                        "optimal_plugins": ["ping", "command"],
                         "detection_time": 0.0,
                         "raw_data": {}
                     }

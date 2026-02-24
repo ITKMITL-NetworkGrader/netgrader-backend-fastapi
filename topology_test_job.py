@@ -65,7 +65,6 @@ TOPOLOGY_TEST_JOB = {
       {
         "id": "server1",
         "ip_address": "192.168.101.2",
-        "connection_type": "ssh",
         "credentials": {
           "username": "ubuntu",
           "password": "ubuntu"
@@ -76,7 +75,6 @@ TOPOLOGY_TEST_JOB = {
       {
         "id": "router1",
         "ip_address": "10.70.38.2",
-        "connection_type": "ssh",
         "credentials": {
           "username": "admin",
           "password": "cisco"
