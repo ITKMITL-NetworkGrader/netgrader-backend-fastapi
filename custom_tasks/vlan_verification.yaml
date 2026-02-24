@@ -3,7 +3,6 @@
 
 task_name: "vlan_verification"
 description: "Verify VLAN configuration and interface VLAN assignments"
-connection_type: "netmiko"
 author: "NetGrader Team"
 version: "1.0.0"
 points: 15

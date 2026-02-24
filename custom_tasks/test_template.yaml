@@ -3,7 +3,6 @@
 
 task_name: "test_template"
 description: "Example template showing debug features for instructors"
-connection_type: "netmiko"
 author: "NetGrader Team"
 version: "1.0.0"
 points: 5

@@ -3,7 +3,6 @@
 
 task_name: "linux_service_health"
 description: "Check critical service status and system health on Linux server"
-connection_type: "ssh"
 author: "NetGrader Team"
 version: "1.0.0"
 points: 8

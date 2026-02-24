@@ -3,7 +3,6 @@
 
 task_name: "advanced_ping_test"
 description: "Advanced ping test with packet loss analysis and retry logic"
-connection_type: "netmiko"
 author: "NetGrader Team"
 version: "1.0.0"
 points: 12

@@ -1,6 +1,5 @@
 task_name: "dhcp_binding"
 description: "Validate DHCP binding table entries and verify lease information"
-connection_type: "netmiko"
 author: "NetGrader Team"
 version: "1.0.0"
 points: 10

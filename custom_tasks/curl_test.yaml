@@ -4,7 +4,6 @@
 
 task_name: "curl_test"
 description: "Test HTTP/HTTPS connectivity to a target URL using curl"
-connection_type: "ssh"
 author: "NetGrader Team"
 version: "1.4.0"
 points: 5

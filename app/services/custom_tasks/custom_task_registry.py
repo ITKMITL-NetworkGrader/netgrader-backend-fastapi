@@ -22,11 +22,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class CustomTaskConnectionType(Enum):
-    """Supported connection types for custom tasks"""
-    NETMIKO = "netmiko" 
-    SSH = "ssh"
-    COMMAND = "command"
 
 
 class CustomTaskValidationCondition(Enum):
@@ -84,7 +79,6 @@ class CustomTaskDefinition:
     """Complete definition of a global task template"""
     task_name: str
     description: str
-    connection_type: CustomTaskConnectionType
     commands: List[CustomTaskCommand]
     validation_rules: List[CustomTaskValidationRule]
     parameters: List[CustomTaskParameter] = None
@@ -429,28 +423,11 @@ class CustomTaskRegistry:
                 custom_debug_points=debug_data.get("custom_debug_points", [])
             )
         
-        # Validate connection type
-        raw_conn = task_data.get("connection_type")
-        if not raw_conn:
-            raise CustomTaskValidationError(
-                f"Missing 'connection_type' in template '{task_data.get('task_name', 'unknown')}'. "
-                f"Supported types: {[e.value for e in CustomTaskConnectionType]}."
-            )
-        try:
-            connection_type = CustomTaskConnectionType(raw_conn)
-        except ValueError:
-            raise CustomTaskValidationError(
-                f"Unsupported connection_type '{raw_conn}' in template "
-                f"'{task_data.get('task_name', 'unknown')}'. "
-                f"Supported types: {[e.value for e in CustomTaskConnectionType]}. "
-                f"Migrate NAPALM templates to netmiko."
-            )
 
         # Create task definition
         return CustomTaskDefinition(
             task_name=task_data["task_name"],
             description=task_data["description"],
-            connection_type=connection_type,
             commands=commands,
             validation_rules=validation_rules,
             parameters=parameters if parameters else None,

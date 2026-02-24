@@ -3,7 +3,6 @@
 
 task_name: "console_terminal_test"
 description: "Testing connection via console terminal"
-connection_type: "netmiko"
 author: "NetGrader Team"
 version: "1.0.0"
 points: 7
