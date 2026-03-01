@@ -1,196 +1,198 @@
-# NetGrader Custom YAML Template Guide
+# NetGrader Custom YAML Template Guide (Refactored Runtime)
 
-> **Complete reference for creating custom grading task templates**
+> **Current reference for creating custom grading task templates**
 
-This document describes the custom YAML template format used in NetGrader for defining network grading tasks. These templates allow instructors to create reusable, configurable grading tasks without writing code.
+This guide documents the **actual behavior in the current refactored backend** (`CustomTaskRegistry` + `CustomTaskExecutor`).
 
 ---
 
-## Template Structure Overview
+## What Changed in the Refactor
 
-A custom YAML template consists of the following sections:
+- Templates are now loaded as **global templates from MinIO**, not from local disk at runtime.
+- `template_name` in grading payload maps to a global template and is converted internally to `custom_task_id`.
+- `connection_type` is no longer used by the runtime.
+- All `netmiko_send_command` actions inside a single template execution now share one connection automatically.
+- `parse_output` now has consistent parser modes (`regex`, `textfsm`, `jinja`) and supports `register_as: raw`.
+- Validation supports `not_equals` in addition to previous conditions.
+
+---
+
+## Template Structure (Current)
 
 ```yaml
-# Metadata Section
-task_name: "template_identifier"
-description: "Human-readable description"
-connection_type: "netmiko"          # netmiko, ssh, or command
-author: "Author Name"
+task_name: "vlan_verification"
+description: "Verify VLAN configuration"
+author: "NetGrader Team"
 version: "1.0.0"
-points: 10
+points: 15
 
-# Parameter Definitions
 parameters:
-  - name: "param_name"
+  - name: "interface_name"
     datatype: "string"
-    description: "Description"
+    description: "Interface to validate"
     required: true
-    example: "example_value"
+    example: "GigabitEthernet0/1"
 
-# Debug Configuration (Optional)
 debug:
   show_command_results: true
   show_registered_variables: true
+  show_validation_details: true
+  show_parameter_substitution: true
+  custom_debug_points:
+    - "result_var"
 
-# Commands Section
 commands:
-  - name: "command_name"
-    action: "action_type"
+  - name: "run_command"
+    action: "netmiko_send_command"
     parameters:
-      key: "value"
-    register: "variable_name"
+      command: "show ip interface brief"
+    register: "raw_output"
 
-# Validation Section
+  - name: "parse_result"
+    action: "parse_output"
+    parameters:
+      parser: "regex"
+      input: "{{raw_output}}"
+      pattern: "up"
+    register: "parsed"
+
 validation:
-  - field: "variable_name"
-    condition: "equals"
-    value: "expected_value"
-    description: "Validation description"
+  - field: "parsed.match_count"
+    condition: "greater_than"
+    value: 0
+    description: "At least one match must exist"
 ```
 
 ---
 
-## Metadata Section
+## Metadata Fields
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `task_name` | string | ✅ | Unique identifier for the template (alphanumeric, underscores, hyphens only) |
-| `description` | string | ✅ | Human-readable description of what the task does |
-| `connection_type` | enum | ✅ | Connection method: `netmiko`, `ssh`, or `command` |
-| `author` | string | ❌ | Template author name |
-| `version` | string | ❌ | Template version (default: `1.0.0`) |
-| `points` | integer | ❌ | Maximum points for this task (default: `10`) |
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `task_name` | string | ✅ | Must be unique and match `[a-zA-Z0-9_-]+` |
+| `description` | string | ✅ | Human-readable description |
+| `author` | string | ❌ | Optional |
+| `version` | string | ❌ | Default `1.0.0` |
+| `points` | number | ❌ | Default `10` |
 
-### Connection Types
+### Important
 
-| Type | Description | Compatible Actions |
-|------|-------------|-------------------|
-| `netmiko` | CLI-based device interaction via Netmiko | `netmiko_send_command`, `ping`, `parse_output` |
-| `ssh` | Generic SSH connection | `netmiko_send_command`, `ping`, `parse_output` |
-| `command` | Direct command execution | `netmiko_send_command`, `parse_output` |
+- `connection_type` is **ignored** by current runtime and should not be relied on.
 
 ---
 
-## Parameters Section
+## Parameters
 
-Define configurable parameters that can be passed at runtime. Parameters support **Jinja2 templating** in commands using `{{parameter_name}}` syntax.
+Parameters are defined in `parameters` and can be referenced with Jinja syntax:
 
-```yaml
-parameters:
-  - name: "target_ip"
-    datatype: "ip_address"
-    description: "Target IP address to ping"
-    required: true
-    example: "192.168.1.100"
-  
-  - name: "interface_name"
-    datatype: "string"
-    description: "Interface to check (e.g., GigabitEthernet0/1)"
-    required: true
-    example: "GigabitEthernet0/1"
-```
+- `{{parameter_name}}`
+- `{{parameters.parameter_name}}`
 
-### Supported Data Types
+### Supported datatypes
 
-| Data Type | Description | Validation |
-|-----------|-------------|------------|
-| `string` | Any text value | Must be a string |
-| `integer` | Whole number | Must be parseable as integer |
-| `float` | Decimal number | Must be parseable as float |
-| `boolean` | True/false value | Accepts `true`, `false`, `1`, `0` |
-| `ip_address` | IPv4 address | Must match IPv4 pattern |
-| `domain_name` | DNS hostname | Must be valid domain format |
-| `cidr` | CIDR notation | Must match `x.x.x.x/y` pattern |
+- `string`
+- `integer`
+- `float`
+- `boolean`
+- `ip_address` (IPv4)
+- `domain_name`
+- `cidr`
+- `ipv6_address`
 
-### Union Types
+### Union types
 
-Combine multiple types with the `|` operator:
+Use `|` to allow multiple datatypes:
 
 ```yaml
-parameters:
-  - name: "target"
-    datatype: "ip_address | domain_name"
-    description: "Target can be IP or hostname"
-    required: true
+datatype: "ip_address | domain_name"
 ```
+
+### Runtime coercion behavior
+
+- `integer` / `float`: string values are coerced when possible.
+- `boolean`: accepts `true/false`, `1/0`, `yes/no` (case-insensitive).
+- Optional parameter with `null` or empty string is accepted without type validation.
 
 ---
 
-## Debug Section
+## Commands
 
-Enable debugging features for development and troubleshooting. Debug output appears in the task execution results.
+Commands execute sequentially.
 
 ```yaml
-debug:
-  show_command_results: true          # Show output from each command
-  show_registered_variables: true     # Show all stored variables
-  show_validation_details: true       # Show detailed validation results
-  show_parameter_substitution: true   # Show received parameter values
-  custom_debug_points:                # Specific variables to track
-    - "ping_result"
-    - "success_rate"
+- name: "command_name"
+  action: "action_type"
+  parameters:
+    key: "value"
+  register: "variable_name"
+  register_as: "raw"
 ```
 
-| Option | Description |
-|--------|-------------|
-| `show_command_results` | Display output from each executed command |
-| `show_registered_variables` | Show all variables stored via `register` |
-| `show_validation_details` | Display detailed validation pass/fail information |
-| `show_parameter_substitution` | Show the actual parameter values received |
-| `custom_debug_points` | List specific variable names to track and display |
+| Field | Required | Notes |
+|---|---|---|
+| `name` | ✅ | Must be unique in template |
+| `action` | ✅ | One of supported actions |
+| `parameters` | ❌ | Defaults to `{}` |
+| `register` | ❌ | Stores command result into context variable |
+| `register_as` | ❌ | Only supports `raw`; requires `register`; only valid for `parse_output` and `netmiko_send_command` |
+
+### Supported actions
+
+- `netmiko_send_command`
+- `ping`
+- `parse_output`
+- `custom_script` (placeholder, not implemented)
 
 ---
 
-## Commands Section
+## Action Details
 
-Define the sequence of actions to execute. Commands run sequentially and can store results in variables.
+### 1) `netmiko_send_command`
 
-### Command Structure
-
-```yaml
-commands:
-  - name: "descriptive_name"
-    action: "action_type"
-    parameters:
-      key: "value"
-      template_key: "{{parameter_name}}"
-    register: "result_variable"
-```
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `name` | string | ✅ | Unique descriptive name for the command |
-| `action` | enum | ✅ | Type of action to perform |
-| `parameters` | object | ✅ | Action-specific parameters |
-| `register` | string | ❌ | Variable name to store the result |
-
-### Supported Actions
-
-#### 1. `netmiko_send_command`
-
-Execute a CLI command on the device using Netmiko.
+Runs command via Nornir command executor.
 
 ```yaml
 - name: "show_interfaces"
   action: "netmiko_send_command"
   parameters:
     command: "show ip interface brief"
-    use_textfsm: true                    # Optional: parse with TextFSM
-    textfsm_template: "cisco_ios_show..."  # Optional: custom template
-  register: "interface_output"
+    read_timeout: 30
+    last_read: 2.0
+    execution_mode: "isolated"
+    stateful_session_id: "session-1"
+    connection_timeout: 30
+    use_textfsm: true
+    textfsm_template: "/path/template.textfsm"
+  register: "interfaces"
 ```
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `command` | string | ✅ | CLI command to execute |
-| `use_textfsm` | boolean | ❌ | Enable TextFSM parsing |
-| `textfsm_template` | string | ❌ | Specific TextFSM template name |
-| `execution_mode` | string | ❌ | Execution mode configuration |
-| `connection_timeout` | integer | ❌ | Connection timeout in seconds |
+#### Parameters forwarded by custom executor
 
-#### 2. `ping`
+- `command` (required)
+- `read_timeout` (optional, default `30` seconds, range `1`-`120`)
+- `last_read` (optional, timing-based read window, range `0.5`-`30`)
+- `use_textfsm` (optional, parse using ntc-templates lookup)
+- `textfsm_template` (optional, custom template path or inline template content)
 
-Execute a ping test from the device.
+#### Connection behavior for `netmiko_send_command`
+
+- Commands share a single isolated connection for the full template execution.
+- The shared connection is created only when at least one `netmiko_send_command` exists in the template.
+- `execution_mode` and `stateful_session_id` are accepted for backward compatibility but are deprecated and log warnings.
+- `connection_timeout` is ignored by the shared-command path and logs a warning.
+
+If `register_as: raw` is used, raw metadata is stored:
+
+```yaml
+raw_output: "..."
+structured_output: [...]
+```
+
+---
+
+### 2) `ping`
+
+Runs ping through Nornir ping task.
 
 ```yaml
 - name: "test_connectivity"
@@ -201,371 +203,219 @@ Execute a ping test from the device.
   register: "ping_result"
 ```
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `target_ip` | string | ✅ | IP address or hostname to ping |
-| `ping_count` | integer | ❌ | Number of ping packets (default: 3) |
+#### Parameters
 
-#### 3. `parse_output`
+- `target_ip` (required)
+- `ping_count` (optional, default `3`)
 
-Parse text output using regex, TextFSM, or Jinja2.
+Result stored is the ping task `stdout` string.
 
-##### Regex Parser (Default)
+---
+
+### 3) `parse_output`
+
+Parses command output using one of three parser types.
 
 ```yaml
-- name: "extract_success_rate"
+- name: "parse_step"
   action: "parse_output"
   parameters:
-    parser: "regex"                      # Optional, default parser
-    input: "{{ping_result}}"
-    pattern: "Success rate is (\\d+) percent"
-  register: "success_rate"
+    parser: "regex"
+    input: "{{some_output}}"
+    pattern: "..."
+  register: "parsed"
 ```
 
-**Result structure:**
+#### Parser: `regex` (default)
+
+Required: `pattern`
+
 ```yaml
-matches: ["80"]           # All captured groups
-match_count: 1            # Number of matches
-first_match: "80"         # First match or null
+parameters:
+  input: "{{ping_result}}"
+  pattern: "Success rate is (\\d+) percent"
 ```
 
-##### TextFSM Parser
+Registered result shape:
 
 ```yaml
-- name: "parse_dhcp_bindings"
-  action: "parse_output"
-  parameters:
-    parser: "textfsm"
-    input: "{{dhcp_output}}"
-    template_path: "/path/to/template.textfsm"
-  register: "parsed_dhcp"
+matches: [...]
+match_count: 1
+first_match: "80"
 ```
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `parser` | string | ✅ | Must be `"textfsm"` |
-| `input` | string | ✅ | Text to parse |
-| `template_path` | string | ⚠️ | Path to TextFSM template file |
-| `template` | string | ⚠️ | Inline TextFSM template content |
+With `register_as: raw`, additional metadata includes `input` and `pattern`.
 
-> ⚠️ Either `template_path` or `template` is required.
+#### Parser: `textfsm`
 
-**Result structure:**
+Required: `template` (**inline template content**)
+
 ```yaml
-records:                  # List of parsed records as dictionaries
-  - IP_ADDRESS: "192.168.1.10"
-    MAC_ADDRESS: "0011.2233.4455"
-match_count: 5            # Number of parsed records
-template_header: ["IP_ADDRESS", "MAC_ADDRESS"]
+parameters:
+  parser: "textfsm"
+  input: "{{raw_cli}}"
+  template: |
+    Value IP_ADDRESS (\S+)
+
+    Start
+      ^${IP_ADDRESS} -> Record
 ```
 
-##### Jinja2 Parser
+> Current runtime expects `template` content. `template_path` is **not supported** in the parser action.
+
+Registered result (flat) is a list of parsed records:
 
 ```yaml
-- name: "extract_next_hop"
-  action: "parse_output"
-  parameters:
-    parser: "jinja"
-    input: "{{routing_data}}"
-    template: |
-      {% set entries = input.get(parameters.target_network) or [] %}
-      next_hop: {{ entries[0].next_hop if entries else None }}
-  register: "next_hop_details"
+- IP_ADDRESS: "192.168.1.10"
 ```
 
-**Result structure:**
+With `register_as: raw`, metadata includes:
+
 ```yaml
-rendered: "next_hop: 10.0.0.1"    # Raw rendered output
-data:                             # Parsed as YAML/JSON if possible
-  next_hop: "10.0.0.1"
+template_header: [...]
+records: [...]
+raw_matches: [...]
+match_count: 1
+input: "..."
 ```
 
-#### 4. `custom_script`
+#### Parser: `jinja`
 
-Placeholder for custom script execution (future feature).
+Required: `template` (or `pattern` as fallback).
 
 ```yaml
-- name: "custom_check"
-  action: "custom_script"
-  parameters:
-    script_name: "my_script"
-  register: "script_result"
+parameters:
+  parser: "jinja"
+  input: "{{binding_output}}"
+  template: |
+    {% set bindings = input if input is sequence and input is not string and input is not mapping else [] %}
+    leased_ips: {{ bindings[0].ip_address if bindings | length > 0 else [] }}
+```
+
+Behavior:
+
+- Renders Jinja using context variables:
+  - `input`
+  - `parameters`
+  - `variables`
+- Attempts to parse rendered output as JSON, then YAML.
+- If parsing fails, keeps rendered string.
+
+Registered result is the parsed object/string.
+
+With `register_as: raw`, metadata includes:
+
+```yaml
+input: ...
+rendered: "..."
+data: ...
 ```
 
 ---
 
-## Validation Section
+### 4) `custom_script`
 
-Define rules to validate execution results. All validations must pass for the task to succeed.
+Placeholder only.
 
-```yaml
-validation:
-  - field: "success_rate.first_match"
-    condition: "greater_than"
-    value: 60
-    description: "Ping success rate should be greater than 60%"
-  
-  - field: "interface_output"
-    condition: "contains"
-    value: "up"
-    description: "Interface should be up"
-```
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `field` | string | ✅ | Variable path to validate (supports dot notation) |
-| `condition` | enum | ✅ | Validation condition to apply |
-| `value` | varies | ✅ | Expected value to compare against |
-| `description` | string | ❌ | Human-readable description |
-
-### Supported Conditions
-
-| Condition | Description | Example |
-|-----------|-------------|---------|
-| `equals` | Exact match | `value: "up"` |
-| `contains` | String/list contains value | `value: "Success"` |
-| `greater_than` | Numeric comparison > | `value: 50` |
-| `less_than` | Numeric comparison < | `value: 90` |
-| `regex` | Pattern match | `value: "\\d+ packets"` |
-| `exists` | Value exists/non-empty | `value: true` |
-
-### Field Path Syntax
-
-Use dot notation to access nested data:
-
-```yaml
-# Access nested dictionary
-field: "routing_data.0.0.0.0/0.next_hop"
-
-# Access parser results
-field: "success_rate.first_match"
-field: "parsed_result.match_count"
-field: "parsed_result.records.0.IP_ADDRESS"
-
-# Access Jinja parser output
-field: "next_hop_details.data.next_hop"
-```
-
-### Dynamic Value Substitution
-
-Use Jinja2 templating in validation values:
-
-```yaml
-validation:
-  - field: "interface_access_vlan.first_match"
-    condition: "equals"
-    value: "{{expected_vlan_id}}"
-    description: "Interface should be assigned to expected VLAN"
-```
+Returns a static message indicating custom script execution is not implemented yet.
 
 ---
 
 ## Variable System
 
-### Registering Variables
-
-Store command results using the `register` keyword:
+### Registering
 
 ```yaml
-commands:
-  - name: "get_interfaces"
-    action: "netmiko_send_command"
-    parameters:
-      command: "show ip interface brief"
-    register: "interface_output"    # Store result in 'interface_output'
+register: "variable_name"
 ```
 
-### Using Variables
+- On command success: registered value is command `result`.
+- On command failure: registered value is error text (`stderr`).
 
-Reference variables with Jinja2 syntax:
+### Referencing
 
-```yaml
-# In command parameters
-parameters:
-  input: "{{interface_output}}"
+Use Jinja in command parameters and validation values:
 
-# In validation fields
-field: "interface_output"
+- `{{variable_name}}`
+- `{{variables.variable_name}}`
+- `{{parameter_name}}`
+- `{{parameters.parameter_name}}`
 
-# In validation values
-value: "{{expected_value}}"
-```
+### Nested lookup
 
-### Variable Scope
+Dot notation works for dict/list paths in validation fields:
 
-- **Task Parameters**: Available as `{{parameter_name}}`
-- **Registered Variables**: Available as `{{variable_name}}`
-- **In Jinja Parser**: Access via `parameters.name` or `variables.name`
+- `access_vlan.first_match`
+- `parsed.records.0.IP_ADDRESS`
 
 ---
 
-## Complete Examples
+## Validation
 
-### Example 1: Advanced Ping Test
-
-```yaml
-task_name: "advanced_ping_test"
-description: "Multi-stage ping with success rate validation"
-connection_type: "netmiko"
-author: "NetGrader Team"
-version: "1.0.0"
-points: 12
-
-parameters:
-  - name: "target_ip"
-    datatype: "ip_address | domain_name"
-    description: "Target to ping"
-    required: true
-    example: "192.168.1.100"
-
-commands:
-  - name: "initial_ping"
-    action: "ping"
-    parameters:
-      target_ip: "{{target_ip}}"
-      ping_count: 5
-    register: "ping_result"
-  
-  - name: "parse_success"
-    action: "parse_output"
-    parameters:
-      input: "{{ping_result}}"
-      pattern: "Success rate is (\\d+) percent"
-    register: "success_rate"
-
-validation:
-  - field: "success_rate.first_match"
-    condition: "greater_than"
-    value: 60
-    description: "Ping success rate must exceed 60%"
-```
-
-### Example 2: VLAN Verification
+Each rule:
 
 ```yaml
-task_name: "vlan_verification"
-description: "Verify VLAN configuration and assignments"
-connection_type: "netmiko"
-author: "NetGrader Team"
-version: "1.0.0"
-points: 15
-
-parameters:
-  - name: "interface_name"
-    datatype: "string"
-    description: "Interface to check"
-    required: true
-    example: "GigabitEthernet0/1"
-  - name: "expected_vlan_id"
-    datatype: "integer"
-    description: "Expected VLAN ID"
-    required: true
-    example: "100"
-
-commands:
-  - name: "show_vlan_brief"
-    action: "netmiko_send_command"
-    parameters:
-      command: "show vlan brief"
-    register: "vlan_output"
-  
-  - name: "check_interface_vlan"
-    action: "netmiko_send_command"
-    parameters:
-      command: "show interface {{interface_name}} switchport"
-    register: "interface_vlan"
-  
-  - name: "parse_access_vlan"
-    action: "parse_output"
-    parameters:
-      input: "{{interface_vlan}}"
-      pattern: "Access Mode VLAN:\\s+(\\d+)"
-    register: "access_vlan"
-
-validation:
-  - field: "access_vlan.first_match"
-    condition: "equals"
-    value: "{{expected_vlan_id}}"
-    description: "Interface should be on expected VLAN"
-  
-  - field: "interface_vlan"
-    condition: "contains"
-    value: "Switchport: Enabled"
-    description: "Switchport must be enabled"
+- field: "success_rate.first_match"
+  condition: "greater_than"
+  value: 60
+  description: "Success must exceed 60%"
 ```
 
-### Example 3: Linux Service Health Check
+### Supported conditions
 
-```yaml
-task_name: "linux_service_health"
-description: "Check service status on Linux server"
-connection_type: "ssh"
-author: "NetGrader Team"
-version: "1.0.0"
-points: 8
+- `equals`
+- `not_equals`
+- `contains`
+- `greater_than`
+- `less_than`
+- `regex`
+- `exists`
 
-commands:
-  - name: "check_ssh"
-    action: "netmiko_send_command"
-    parameters:
-      command: "systemctl is-active sshd"
-    register: "ssh_status"
-  
-  - name: "check_network"
-    action: "netmiko_send_command"
-    parameters:
-      command: "ip link show | grep 'state UP'"
-    register: "network_interfaces"
-  
-  - name: "count_up_interfaces"
-    action: "parse_output"
-    parameters:
-      input: "{{network_interfaces}}"
-      pattern: "state UP"
-    register: "up_count"
-  
-  - name: "check_disk"
-    action: "netmiko_send_command"
-    parameters:
-      command: "df -h / | tail -n 1 | awk '{print $5}' | sed 's/%//'"
-    register: "disk_usage"
+### Notes
 
-validation:
-  - field: "ssh_status"
-    condition: "contains"
-    value: "active"
-    description: "SSH service must be active"
-  
-  - field: "up_count.match_count"
-    condition: "greater_than"
-    value: 0
-    description: "At least one interface must be up"
-  
-  - field: "disk_usage"
-    condition: "less_than"
-    value: 90
-    description: "Disk usage must be below 90%"
-```
+- `exists` accepts boolean-like expectations (`true/false`, `yes/no`, `1/0`).
+- Validation `value` supports Jinja templating and is rendered at runtime.
+- All validations must pass for final task status to be `passed`.
+- If there are **no validations**, success is based on command success ratio (`> 50%` successful commands).
 
 ---
 
-## Template Location
+## Debug Output
 
-Templates are loaded from the `custom_tasks/` directory relative to the application root. Each `.yaml` file in this directory is automatically registered using its `task_name` field.
+Optional `debug` controls extra output and callback debug payload:
 
+- `show_command_results`
+- `show_registered_variables`
+- `show_validation_details`
+- `show_parameter_substitution`
+- `custom_debug_points`
+
+When enabled, debug data is also included in API result `debug_info`.
+
+---
+
+## Template Loading (Refactored)
+
+Runtime loads templates from MinIO bucket under prefix:
+
+```text
+custom_tasks/
 ```
-netgrader-backend-fastapi/
-├── custom_tasks/
-│   ├── advanced_ping_test.yaml
-│   ├── vlan_verification.yaml
-│   └── linux_service_health.yaml
+
+Examples:
+
+```text
+custom_tasks/vlan_verification.yaml
+custom_tasks/dhcp_binding.yaml
 ```
+
+`STRICT_MODE=true` causes startup failure if any template fails validation.
 
 ---
 
 ## Using Templates in Grading Jobs
 
-Reference templates by `task_name` in your grading job payload:
+In grading job payload, reference template with `template_name`:
 
 ```json
 {
@@ -585,20 +435,26 @@ Reference templates by `task_name` in your grading job payload:
 }
 ```
 
-> **Note**: The `points` value in the job payload overrides the template's default points.
+Runtime maps it to custom execution and sets:
+
+```json
+{
+  "custom_task_id": "vlan_verification"
+}
+```
+
+`points` in job payload overrides template default points.
 
 ---
 
-## Best Practices
+## Authoring Tips
 
-1. **Use Descriptive Names**: Make `task_name` and command names clearly indicate their purpose
-2. **Provide Examples**: Always include `example` values in parameter definitions
-3. **Write Clear Descriptions**: Help other instructors understand what validations check
-4. **Use Debug During Development**: Enable debug options to troubleshoot template issues
-5. **Validate Early**: Add validation rules that catch common configuration errors
-6. **Reuse Patterns**: Create utility templates for common checks (ping, interface status, etc.)
-7. **Version Your Templates**: Update the `version` field when making changes
+1. Keep command names unique and descriptive.
+2. Prefer explicit parser mode (`parser: regex|textfsm|jinja`) for readability.
+3. Use `register_as: raw` only when you need parser metadata.
+4. Validate parsed fields (e.g., `.match_count`, `.first_match`) instead of raw text whenever possible.
+5. Enable debug options while developing, then reduce noise for production templates.
 
 ---
 
-*Last Updated: December 2024*
+*Last Updated: February 2026*

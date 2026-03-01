@@ -13,6 +13,7 @@ import time
 import yaml
 from typing import Dict, Any, List, Optional, Union
 from dataclasses import dataclass, field, replace
+from ntc_templates.parse import parse_output as ntc_parse_output
 
 try:
     import textfsm
@@ -53,6 +54,7 @@ class CustomTaskExecutionContext:
     variables: Dict[str, Any]  # Variables set during execution (register values)
     start_time: float
     points_possible: float
+    _conn_handle: Any = None
     _raw_metas: Dict[int, Any] = field(default_factory=dict)  # Raw parser metadata keyed by command index
 
 
@@ -327,48 +329,62 @@ class CustomTaskExecutor:
                 start_time=start_time,
                 points_possible=parameters.get("points", task_definition.points)
             )
+
+            async def execute_command_loop() -> List[Dict[str, Any]]:
+                loop_results: List[Dict[str, Any]] = []
+                for i, command in enumerate(task_definition.commands):
+                    try:
+                        logger.debug(f"Executing command {i+1}/{len(task_definition.commands)}: {command.name}")
+
+                        command_result = await self._execute_command(
+                            command, context,
+                            command_index=i
+                        )
+                        loop_results.append(command_result)
+
+                        # Store result in variables if register is specified
+                        if command.register:
+                            # Store the actual result, not the full command result structure
+                            if command_result.get("success", False):
+                                actual_result = command_result.get("result", command_result.get("stdout", ""))
+                                if command.register_as == "raw":
+                                    if i in context._raw_metas:
+                                        actual_result = context._raw_metas[i]
+                                    else:
+                                        raise Exception(
+                                            f"Command '{command.name}': register_as='raw' but no raw metadata available "
+                                            f"for action '{command.action}'. Only 'parse_output' and 'netmiko_send_command' "
+                                            f"produce raw metadata."
+                                        )
+                                context.variables[command.register] = actual_result
+                            else:
+                                context.variables[command.register] = command_result.get("stderr", "")
+
+                    except Exception as e:
+                        error_result = {
+                            "command_name": command.name,
+                            "command_index": i,
+                            "success": False,
+                            "error": str(e),
+                            "stdout": "",
+                            "stderr": str(e)
+                        }
+                        loop_results.append(error_result)
+                        logger.error(f"Command execution failed: {command.name} - {e}")
+
+                return loop_results
             
             # Execute each command in sequence
-            command_results = []
-            for i, command in enumerate(task_definition.commands):
-                try:
-                    logger.debug(f"Executing command {i+1}/{len(task_definition.commands)}: {command.name}")
-                    
-                    command_result = await self._execute_command(
-                        command, context,
-                        command_index=i
-                    )
-                    command_results.append(command_result)
-                    
-                    # Store result in variables if register is specified
-                    if command.register:
-                        # Store the actual result, not the full command result structure
-                        if command_result.get("success", False):
-                            actual_result = command_result.get("result", command_result.get("stdout", ""))
-                            if command.register_as == "raw":
-                                if i in context._raw_metas:
-                                    actual_result = context._raw_metas[i]
-                                else:
-                                    raise Exception(
-                                        f"Command '{command.name}': register_as='raw' but no raw metadata available "
-                                        f"for action '{command.action}'. Only 'parse_output' and 'netmiko_send_command' "
-                                        f"produce raw metadata."
-                                    )
-                            context.variables[command.register] = actual_result
-                        else:
-                            context.variables[command.register] = command_result.get("stderr", "")
-                    
-                except Exception as e:
-                    error_result = {
-                        "command_name": command.name,
-                        "command_index": i,
-                        "success": False,
-                        "error": str(e),
-                        "stdout": "",
-                        "stderr": str(e)
-                    }
-                    command_results.append(error_result)
-                    logger.error(f"Command execution failed: {command.name} - {e}")
+            requires_network_connection = any(
+                cmd.action == "netmiko_send_command" for cmd in task_definition.commands
+            )
+
+            if requires_network_connection:
+                async with self.nornir_service.custom_task_connection(device_id) as handle:
+                    context._conn_handle = handle
+                    command_results = await execute_command_loop()
+            else:
+                command_results = await execute_command_loop()
             
             # Validate results against validation rules
             validation_results = []
@@ -600,41 +616,87 @@ class CustomTaskExecutor:
                                      command: CustomTaskCommand,
                                      context: CustomTaskExecutionContext,
                                      resolved_params: Dict[str, Any]) -> Any:
-        """Execute Netmiko command through Nornir service with optional TextFSM parsing."""
-        netmiko_params = {
-            "command": resolved_params.get("command", ""),
-            "points": context.points_possible  # Use context points which already has the override logic
-        }
+        """Execute a Netmiko command through the shared custom-task connection."""
+        if context._conn_handle is None:
+            raise Exception("Custom task connection handle is missing")
 
-        for key in [
-            "execution_mode",
-            "stateful_session_id",
-            "connection_timeout",
-            "use_textfsm",
-            "textfsm_template"
-        ]:
-            if key in resolved_params:
-                netmiko_params[key] = resolved_params[key]
+        command_text = resolved_params.get("command", "")
+        read_timeout = resolved_params.get("read_timeout", 30.0)
+        last_read = resolved_params.get("last_read")
+        use_textfsm = bool(resolved_params.get("use_textfsm", False))
+        textfsm_template = resolved_params.get("textfsm_template")
 
-        nornir_result = await self.nornir_service.execute_command_task(
-            task_id=f"{context.task_id}_{command.name}",
-            device_id=context.device_id,
-            parameters=netmiko_params
+        output = await self.nornir_service.run_single_command(
+            context._conn_handle,
+            command_text,
+            read_timeout=read_timeout,
+            last_read=last_read,
         )
 
-        if nornir_result.status != TaskStatus.PASSED:
-            raise Exception(f"Netmiko command failed: {nornir_result.stderr}")
+        raw_output = output if isinstance(output, str) else str(output)
+        structured_output: Optional[Any] = None
 
-        if nornir_result.debug_info:
-            structured = nornir_result.debug_info.get("structured_output")
-            raw_output = nornir_result.debug_info.get("raw_output") or nornir_result.stdout
-        else:
-            structured = None
-            raw_output = nornir_result.stdout
+        if use_textfsm or textfsm_template:
+            structured_output = self._parse_textfsm_output(
+                command_text=command_text,
+                raw_output=raw_output,
+                context=context,
+                textfsm_template=textfsm_template,
+                use_textfsm=use_textfsm,
+            )
 
-        flat = structured if structured is not None else raw_output
-        raw = {"raw_output": raw_output, "structured_output": structured}
+        flat = structured_output if structured_output is not None else raw_output
+        raw = {"raw_output": raw_output, "structured_output": structured_output}
         return (flat, raw)
+
+    def _parse_textfsm_output(
+        self,
+        command_text: str,
+        raw_output: str,
+        context: CustomTaskExecutionContext,
+        textfsm_template: Optional[str],
+        use_textfsm: bool,
+    ) -> Optional[Any]:
+        """Parse command output using TextFSM template or ntc-templates lookup."""
+        if textfsm_template:
+            if textfsm is None:
+                logger.warning("TextFSM template was provided but textfsm package is not installed")
+                return None
+
+            try:
+                template_content = textfsm_template
+                try:
+                    with open(textfsm_template, "r", encoding="utf-8") as template_file:
+                        template_content = template_file.read()
+                except OSError:
+                    template_content = textfsm_template
+
+                fsm = textfsm.TextFSM(io.StringIO(template_content))
+                raw_rows = fsm.ParseText(raw_output)
+                return [dict(zip(fsm.header, row)) for row in raw_rows]
+            except Exception as exc:
+                logger.warning("TextFSM template parsing failed for command '%s': %s", command_text, exc)
+                return None
+
+        if use_textfsm:
+            device_os = ""
+            if context._conn_handle is not None:
+                device_os = getattr(context._conn_handle, "device_os", "") or ""
+
+            if not device_os:
+                logger.warning(
+                    "use_textfsm is enabled for command '%s' but device_os is unavailable; returning raw output",
+                    command_text,
+                )
+                return None
+
+            try:
+                return ntc_parse_output(platform=device_os, command=command_text, data=raw_output)
+            except Exception as exc:
+                logger.warning("ntc-templates parsing failed for command '%s': %s", command_text, exc)
+                return None
+
+        return None
     
     async def _execute_ping_command(self, 
                                   command: CustomTaskCommand,
@@ -733,10 +795,15 @@ class CustomTaskExecutor:
 
             try:
                 template = _jinja_env.from_string(template_source)
+                render_context = {
+                    **context.parameters,
+                    **context.variables,
+                }
+                render_context["input"] = input_text
+                render_context["parameters"] = context.parameters
+                render_context["variables"] = context.variables
                 rendered = template.render(
-                    input=input_text,
-                    parameters=context.parameters,
-                    variables=context.variables
+                    **render_context,
                 )
             except TemplateError as exc:
                 raise Exception(f"Jinja parsing failed: {exc}") from exc

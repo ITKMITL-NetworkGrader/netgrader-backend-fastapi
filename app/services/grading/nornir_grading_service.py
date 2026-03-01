@@ -5,6 +5,7 @@ Nornir Grading Service - Nornir-based network grading implementation
 import asyncio
 import json
 import logging
+from contextlib import asynccontextmanager
 from functools import partial
 import os
 import tempfile
@@ -30,6 +31,57 @@ from app.schemas.models import ExecutionMode, Device, TaskResult, TaskStatus
 from app.services.grading.exception_handler import classify_exception
 
 logger = logging.getLogger(__name__)
+
+_MIN_READ_TIMEOUT = 1.0
+_MAX_READ_TIMEOUT = 120.0
+_MIN_LAST_READ = 0.5
+_MAX_LAST_READ = 30.0
+
+
+class CommandExecutionError(Exception):
+    """Raised when a single command fails within a shared connection."""
+
+    def __init__(self, message: str, cause: Optional[Exception] = None, command: str = ""):
+        super().__init__(message)
+        self.__cause__ = cause
+        self.command = command
+
+
+@dataclass
+class CustomTaskConnectionHandle:
+    device_id: str
+    device_nr: Any
+    device_type: str
+    device_os: str
+
+
+def _is_shell_prompt_line(line: str) -> bool:
+    stripped = line.strip()
+    if not stripped:
+        return True
+
+    if re.match(r'^[a-zA-Z0-9_-]+@[a-zA-Z0-9._-]+:[^\s]*[$#]\s*$', stripped):
+        return True
+
+    if re.match(r'^[a-zA-Z0-9_-]+@[a-zA-Z0-9._-]+:[^\s]*[$#]\s+\S', stripped):
+        return True
+
+    if re.match(r'^[a-zA-Z0-9_-]+[#>]\s*$', stripped):
+        return True
+
+    if re.match(r'^[a-zA-Z0-9_-]+\([a-z0-9-]+\)[#>]\s*$', stripped):
+        return True
+
+    if re.match(r'^[a-zA-Z0-9_-]+[#>]\s*\S', stripped):
+        return True
+
+    if re.match(r'^[/~][^\s]*\s*[$#]\s*$', stripped):
+        return True
+
+    if re.match(r'^[/~][^\s]*\s*[$#]\s+\S', stripped):
+        return True
+
+    return False
 
 def netmiko_send_command_timing(task: Task, command_string: str, last_read: float = 2.0, **kwargs) -> Result:
     """
@@ -78,6 +130,106 @@ class NornirGradingService:
             registry: Pre-initialized CustomTaskRegistry instance
         """
         self._custom_task_registry = registry
+
+    @staticmethod
+    def _clean_telnet_output(output: str, device_type: str, device_os: str) -> str:
+        """Remove prompt noise and control sequences from telnet command output."""
+        if not isinstance(output, str):
+            return output
+
+        ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~]|\].*?(?:\x07|\x1B\\))')
+        cleaned = ansi_escape.sub('', output)
+
+        osc_remnants = re.compile(r'\d+;[^\s]+@[^\s]+:[^\n]*')
+        cleaned = osc_remnants.sub('', cleaned)
+
+        control_chars = re.compile(r'[\x00-\x08\x0b-\x1f\x7f-\x9f]')
+        cleaned = control_chars.sub('', cleaned)
+
+        lines = [line for line in cleaned.splitlines() if not _is_shell_prompt_line(line)]
+        return "\n".join(lines).strip()
+
+    @asynccontextmanager
+    async def custom_task_connection(self, device_id: str):
+        """Create a shared isolated connection handle for all commands in one custom task."""
+        async with self.connection_manager.get_connection(
+            device_id=device_id
+        ) as conn_ctx:
+            device_nr = self.connection_manager.get_filtered_nornir(conn_ctx, device_id)
+            host = device_nr.inventory.hosts[device_id]
+            netmiko_options = host.connection_options.get("netmiko")
+            device_type = (
+                netmiko_options.extras.get("device_type", "")
+                if netmiko_options and netmiko_options.extras
+                else ""
+            )
+            device_os = (host.data.get("device_os") if hasattr(host, "data") else None) or ""
+
+            yield CustomTaskConnectionHandle(
+                device_id=device_id,
+                device_nr=device_nr,
+                device_type=device_type,
+                device_os=device_os,
+            )
+
+    async def run_single_command(
+        self,
+        handle: CustomTaskConnectionHandle,
+        command: str,
+        read_timeout: float = 30.0,
+        last_read: Optional[float] = None,
+    ) -> str:
+        """Run one command through an existing custom-task shared connection."""
+        try:
+            read_timeout = float(read_timeout if read_timeout is not None else 30.0)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("read_timeout must be a number") from exc
+
+        if not (_MIN_READ_TIMEOUT <= read_timeout <= _MAX_READ_TIMEOUT):
+            raise ValueError(
+                f"read_timeout must be between {_MIN_READ_TIMEOUT} and {_MAX_READ_TIMEOUT} seconds"
+            )
+
+        if last_read is not None:
+            try:
+                last_read = float(last_read)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("last_read must be a number") from exc
+
+            if not (_MIN_LAST_READ <= last_read <= _MAX_LAST_READ):
+                raise ValueError(
+                    f"last_read must be between {_MIN_LAST_READ} and {_MAX_LAST_READ} seconds"
+                )
+
+        def _task(task: Task) -> Result:
+            net_connect = task.host.get_connection("netmiko", task.nornir.config)
+            use_timing = last_read is not None or handle.device_type == "generic_termserver_telnet"
+            if use_timing:
+                timing_last_read = last_read if last_read is not None else 2.0
+                output = net_connect.send_command_timing(
+                    command,
+                    last_read=timing_last_read,
+                    read_timeout=read_timeout,
+                )
+            else:
+                output = net_connect.send_command(command, read_timeout=read_timeout)
+
+            return Result(host=task.host, result=output)
+
+        result = await self._run_nornir_task(handle.device_nr, _task)
+        device_result = result[handle.device_id]
+        if device_result.failed:
+            raise CommandExecutionError(
+                f"Command '{command}' failed",
+                cause=device_result.exception,
+                command=command,
+            )
+
+        output = device_result.result
+        if isinstance(output, str) and handle.device_type in ("generic_termserver_telnet", "generic_telnet"):
+            output = self._clean_telnet_output(output, handle.device_type, handle.device_os)
+
+        return output
         
     async def add_device(self, device: Device):
         """Add a device to the grader via connection manager"""
@@ -93,10 +245,10 @@ class NornirGradingService:
         ping_count = parameters.get("ping_count", 3)
         points = parameters.get("points", 10.0)
         execution_mode = parameters.get("execution_mode", ExecutionMode.ISOLATED)
+        if isinstance(execution_mode, str):
+            execution_mode = ExecutionMode(execution_mode)
         session_id = parameters.get("stateful_session_id")
         connection_timeout = parameters.get("connection_timeout", 30)
-        
-        # Use execution mode directly
         connection_mode = execution_mode
         
         try:
@@ -209,10 +361,10 @@ class NornirGradingService:
         target_ip = parameters.get("target_ip")
         points = parameters.get("points", 10.0)
         execution_mode = parameters.get("execution_mode", ExecutionMode.ISOLATED)
+        if isinstance(execution_mode, str):
+            execution_mode = ExecutionMode(execution_mode)
         session_id = parameters.get("stateful_session_id")
         connection_timeout = parameters.get("connection_timeout", 30)
-        
-        # Use execution mode directly
         connection_mode = execution_mode
         
         try:
@@ -353,6 +505,8 @@ class NornirGradingService:
         command = parameters.get("command")
         points = parameters.get("points", 10.0)
         connection_mode = parameters.get("execution_mode", ExecutionMode.ISOLATED)
+        if isinstance(connection_mode, str):
+            connection_mode = ExecutionMode(connection_mode)
         session_id = parameters.get("stateful_session_id")
         connection_timeout = parameters.get("connection_timeout", 30)
         use_textfsm = parameters.get("use_textfsm", False)
@@ -412,58 +566,12 @@ class NornirGradingService:
                 if hasattr(device_result, "result"):
                     # Apply cleaning for telnet-based connections
                     if isinstance(device_result.result, str) and device_type in ("generic_termserver_telnet", "generic_telnet"):
-                        ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~]|\].*?(?:\x07|\x1B\\))')
-                        output = ansi_escape.sub('', device_result.result)
-                        
-                        osc_remnants = re.compile(r'\d+;[^\s]+@[^\s]+:[^\n]*')
-                        output = osc_remnants.sub('', output)
-                        
-                        control_chars = re.compile(r'[\x00-\x08\x0b-\x1f\x7f-\x9f]')
-                        output = control_chars.sub('', output)
-                    
-                        def is_shell_prompt_line(line: str) -> bool:
-                            stripped = line.strip()
-                            if not stripped:
-                                return True
-                            
-                            # Linux prompt: user@host:path$ or user@host:path#
-                            if re.match(r'^[a-zA-Z0-9_-]+@[a-zA-Z0-9._-]+:[^\s]*[$#]\s*$', stripped):
-                                return True
-                            
-                            # Linux command echo: user@host:path# command (prompt followed by command)
-                            if re.match(r'^[a-zA-Z0-9_-]+@[a-zA-Z0-9._-]+:[^\s]*[$#]\s+\S', stripped):
-                                return True
-                            
-                            # Cisco IOS prompt: hostname# or hostname>
-                            if re.match(r'^[a-zA-Z0-9_-]+[#>]\s*$', stripped):
-                                return True
-                            
-                            # Cisco IOS config mode: hostname(config)# or hostname(config-if)#
-                            if re.match(r'^[a-zA-Z0-9_-]+\([a-z0-9-]+\)[#>]\s*$', stripped):
-                                return True
-                            
-                            # Cisco IOS command echo: hostname#command or hostname>command
-                            if re.match(r'^[a-zA-Z0-9_-]+[#>]\s*\S', stripped):
-                                return True
-                            
-                            # BusyBox/Alpine minimal prompt: / # or /path # or ~ $ or ~ #
-                            if re.match(r'^[/~][^\s]*\s*[$#]\s*$', stripped):
-                                return True
-                            
-                            # BusyBox/Alpine command echo: / # command or /path # command
-                            if re.match(r'^[/~][^\s]*\s*[$#]\s+\S', stripped):
-                                return True
-                            
-                            return False
-                        
-                        lines = [line for line in output.splitlines() if not is_shell_prompt_line(line)]
-                        
-                        clean_output = "\n".join(lines).strip()
+                        device_os = device_host.data.get("device_os") if hasattr(device_host, 'data') else ""
+                        clean_output = self._clean_telnet_output(device_result.result, device_type, device_os)
                         parsed_data = []
                         try:
                             # Determine the actual device OS for parsing
                             # First, check if device_os is specified in the host data
-                            device_os = device_host.data.get("device_os") if hasattr(device_host, 'data') else None
                             if clean_output and (use_textfsm or textfsm_template):
                                 parsed_data = parse_output(platform=device_os, command=command, data=clean_output)
                         except Exception as e:
