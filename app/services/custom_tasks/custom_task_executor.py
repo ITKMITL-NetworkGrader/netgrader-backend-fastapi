@@ -11,7 +11,7 @@ import re
 import json
 import time
 import yaml
-from typing import Dict, Any, List, Optional, Union
+from typing import Dict, Any, List, Optional
 from dataclasses import dataclass, field, replace
 from ntc_templates.parse import parse_output as ntc_parse_output
 

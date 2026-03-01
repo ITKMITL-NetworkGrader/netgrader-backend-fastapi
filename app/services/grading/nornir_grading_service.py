@@ -132,6 +132,15 @@ class NornirGradingService:
         self._custom_task_registry = registry
 
     @staticmethod
+    def _normalize_execution_mode(mode: Any) -> ExecutionMode:
+        """Normalize execution mode payload values to ExecutionMode enum."""
+        if isinstance(mode, ExecutionMode):
+            return mode
+        if isinstance(mode, str):
+            return ExecutionMode(mode.strip().lower())
+        return ExecutionMode(mode)
+
+    @staticmethod
     def _clean_telnet_output(output: str, device_type: str, device_os: str) -> str:
         """Remove prompt noise and control sequences from telnet command output."""
         if not isinstance(output, str):
@@ -245,13 +254,23 @@ class NornirGradingService:
         ping_count = parameters.get("ping_count", 3)
         points = parameters.get("points", 10.0)
         execution_mode = parameters.get("execution_mode", ExecutionMode.ISOLATED)
-        if isinstance(execution_mode, str):
-            execution_mode = ExecutionMode(execution_mode)
         session_id = parameters.get("stateful_session_id")
-        connection_timeout = parameters.get("connection_timeout", 30)
         connection_mode = execution_mode
         
         try:
+            try:
+                connection_mode = self._normalize_execution_mode(execution_mode)
+            except ValueError:
+                valid_modes = ", ".join(mode.value for mode in ExecutionMode)
+                return TaskResult(
+                    task_id=task_id,
+                    status=TaskStatus.ERROR,
+                    stderr=f"Invalid execution_mode '{execution_mode}'. Expected one of: {valid_modes}",
+                    execution_time=time.time() - start_time,
+                    points_earned=0,
+                    points_possible=points,
+                )
+
             # Check if this is a localhost device first
             device = self.connection_manager.devices.get(device_id)
             if device and (device.ip_address in ["localhost", "127.0.0.1"] or device.ip_address.startswith("127.")):
@@ -298,7 +317,6 @@ class NornirGradingService:
                 # Get device OS to determine ping command format
                 device_host = device_nr.inventory.hosts[device_id]
                 device_os = device_host.data.get("device_os", "") if hasattr(device_host, 'data') else ""
-                device_platform = device_host.platform
                 # Execute ping command via netmiko - choose command based on device OS
                 if device_os == "ios" or (device_os and "cisco" in device_os.lower()):
                     # Cisco IOS ping format
@@ -361,13 +379,23 @@ class NornirGradingService:
         target_ip = parameters.get("target_ip")
         points = parameters.get("points", 10.0)
         execution_mode = parameters.get("execution_mode", ExecutionMode.ISOLATED)
-        if isinstance(execution_mode, str):
-            execution_mode = ExecutionMode(execution_mode)
         session_id = parameters.get("stateful_session_id")
-        connection_timeout = parameters.get("connection_timeout", 30)
         connection_mode = execution_mode
         
         try:
+            try:
+                connection_mode = self._normalize_execution_mode(execution_mode)
+            except ValueError:
+                valid_modes = ", ".join(mode.value for mode in ExecutionMode)
+                return TaskResult(
+                    task_id=task_id,
+                    status=TaskStatus.ERROR,
+                    stderr=f"Invalid execution_mode '{execution_mode}'. Expected one of: {valid_modes}",
+                    execution_time=time.time() - start_time,
+                    points_earned=0,
+                    points_possible=points,
+                )
+
             # Use connection manager for isolated connection
             async with self.connection_manager.get_connection(
                 device_id=device_id, 
@@ -505,15 +533,25 @@ class NornirGradingService:
         command = parameters.get("command")
         points = parameters.get("points", 10.0)
         connection_mode = parameters.get("execution_mode", ExecutionMode.ISOLATED)
-        if isinstance(connection_mode, str):
-            connection_mode = ExecutionMode(connection_mode)
         session_id = parameters.get("stateful_session_id")
-        connection_timeout = parameters.get("connection_timeout", 30)
         use_textfsm = parameters.get("use_textfsm", False)
         textfsm_template = parameters.get("textfsm_template")
         last_read = parameters.get("last_read") # New parameter for timing tasks
 
         try:
+            try:
+                connection_mode = self._normalize_execution_mode(connection_mode)
+            except ValueError:
+                valid_modes = ", ".join(mode.value for mode in ExecutionMode)
+                return TaskResult(
+                    task_id=task_id,
+                    status=TaskStatus.ERROR,
+                    stderr=f"Invalid execution_mode '{parameters.get('execution_mode')}'. Expected one of: {valid_modes}",
+                    execution_time=time.time() - start_time,
+                    points_earned=0,
+                    points_possible=points,
+                )
+
             # Use connection manager for isolated connection
             async with self.connection_manager.get_connection(
                 device_id=device_id, 
