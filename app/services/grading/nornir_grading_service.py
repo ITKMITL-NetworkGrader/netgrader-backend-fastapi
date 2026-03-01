@@ -53,6 +53,7 @@ class CustomTaskConnectionHandle:
     device_nr: Any
     device_type: str
     device_os: str
+    net_connect: Any
 
 
 def _is_shell_prompt_line(line: str) -> bool:
@@ -160,9 +161,12 @@ class NornirGradingService:
 
     @asynccontextmanager
     async def custom_task_connection(self, device_id: str):
-        """Create a shared isolated connection handle for all commands in one custom task."""
+        """Create a shared connection handle for custom tasks across template executions."""
+        shared_session_id = f"shared_{device_id}"
         async with self.connection_manager.get_connection(
-            device_id=device_id
+            device_id=device_id,
+            connection_mode=ExecutionMode.SHARED,
+            session_id=shared_session_id,
         ) as conn_ctx:
             device_nr = self.connection_manager.get_filtered_nornir(conn_ctx, device_id)
             host = device_nr.inventory.hosts[device_id]
@@ -173,12 +177,14 @@ class NornirGradingService:
                 else ""
             )
             device_os = (host.data.get("device_os") if hasattr(host, "data") else None) or ""
+            net_connect = host.get_connection("netmiko", device_nr.config)
 
             yield CustomTaskConnectionHandle(
                 device_id=device_id,
                 device_nr=device_nr,
                 device_type=device_type,
                 device_os=device_os,
+                net_connect=net_connect,
             )
 
     async def run_single_command(
@@ -210,31 +216,28 @@ class NornirGradingService:
                     f"last_read must be between {_MIN_LAST_READ} and {_MAX_LAST_READ} seconds"
                 )
 
-        def _task(task: Task) -> Result:
-            net_connect = task.host.get_connection("netmiko", task.nornir.config)
+        def _send_command() -> str:
             use_timing = last_read is not None or handle.device_type == "generic_termserver_telnet"
             if use_timing:
                 timing_last_read = last_read if last_read is not None else 2.0
-                output = net_connect.send_command_timing(
+                output = handle.net_connect.send_command_timing(
                     command,
                     last_read=timing_last_read,
                     read_timeout=read_timeout,
                 )
             else:
-                output = net_connect.send_command(command, read_timeout=read_timeout)
+                output = handle.net_connect.send_command(command, read_timeout=read_timeout)
+            return output
 
-            return Result(host=task.host, result=output)
-
-        result = await self._run_nornir_task(handle.device_nr, _task)
-        device_result = result[handle.device_id]
-        if device_result.failed:
+        try:
+            output = await asyncio.to_thread(_send_command)
+        except Exception as exc:
             raise CommandExecutionError(
                 f"Command '{command}' failed",
-                cause=device_result.exception,
+                cause=exc,
                 command=command,
             )
 
-        output = device_result.result
         if isinstance(output, str) and handle.device_type in ("generic_termserver_telnet", "generic_telnet"):
             output = self._clean_telnet_output(output, handle.device_type, handle.device_os)
 
