@@ -339,12 +339,52 @@ class ConnectionManager:
             context = self._active_connections[context_key]
             await self._cleanup_connection(context_key, context)
             logger.debug(f"Closed stateful connection for {device_id} (session: {session_id})")
+
+    def _close_context_connections(self, context: Optional[ConnectionContext]):
+        """Explicitly close host/Nornir connections for a context when possible."""
+        if not context or not context.nr_instance:
+            return
+
+        try:
+            host = context.nr_instance.inventory.hosts.get(context.device_id)
+            if host is not None:
+                host.close_connections()
+                logger.debug(
+                    f"Closed host connections for {context.device_id} "
+                    f"({context.connection_mode.value}, session: {context.session_id})"
+                )
+                return
+        except Exception as e:
+            logger.warning(
+                f"Failed to close host connections for {context.device_id} "
+                f"({context.connection_mode.value}, session: {context.session_id}): {e}"
+            )
+
+        try:
+            context.nr_instance.close_connections()
+            logger.debug(
+                f"Closed Nornir connections for {context.device_id} "
+                f"({context.connection_mode.value}, session: {context.session_id})"
+            )
+        except Exception as e:
+            logger.warning(
+                f"Failed to close Nornir connections for {context.device_id} "
+                f"({context.connection_mode.value}, session: {context.session_id}): {e}"
+            )
     
     async def _cleanup_connection(self, context_key: str, context: Optional[ConnectionContext]):
         """Clean up connection resources"""
         try:
+            self._close_context_connections(context)
+
             if context_key in self._active_connections:
                 del self._active_connections[context_key]
+
+            if context and context.connection_mode == ExecutionMode.SHARED:
+                logger.info(
+                    f"Cleared shared session context for {context.device_id} "
+                    f"(session: {context.session_id})"
+                )
             
             if context and context.temp_dir and context.connection_mode != ExecutionMode.SHARED:
                 # Don't cleanup shared temp directory
@@ -370,7 +410,12 @@ class ConnectionManager:
     
     async def cleanup_all(self):
         """Clean up all connections and resources"""
-        logger.info("Cleaning up all connections...")
+        shared_context_count = sum(
+            1 for ctx in self._active_connections.values() if ctx.connection_mode == ExecutionMode.SHARED
+        )
+        logger.info(
+            f"Cleaning up all connections (total={len(self._active_connections)}, shared={shared_context_count})..."
+        )
         
         # Close all active connections
         for context_key in list(self._active_connections.keys()):
@@ -383,6 +428,7 @@ class ConnectionManager:
             shutil.rmtree(self._shared_temp_dir)
             self._shared_temp_dir = None
             self._shared_nr_instance = None
+            logger.info("Cleared shared Nornir instance resources")
             
         logger.info("All connections cleaned up")
     
