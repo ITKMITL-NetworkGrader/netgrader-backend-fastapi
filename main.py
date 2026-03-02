@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.schemas.models import GradingJob
 from app.services.pipeline.queue_consumer import consumer, start_consumer, stop_consumer
 from app.core.config import config
+from app.routers.task_generator.router import router as task_generator_router
 
 # Configure logging
 logging.basicConfig(
@@ -59,6 +60,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(task_generator_router)
 
 @app.get("/")
 def root():
