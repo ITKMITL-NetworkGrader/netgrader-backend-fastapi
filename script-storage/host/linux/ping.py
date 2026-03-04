@@ -1,5 +1,5 @@
 """
-Ping Google (8.8.8.8) from PC1
+Execute ping from PC1 to Google's public DNS server (8.8.8.8).
 """
 
 import argparse
@@ -10,20 +10,20 @@ from netmiko import ConnectHandler
 from netmiko.exceptions import NetmikoTimeoutException, NetmikoAuthenticationException, SSHException
 
 def main():
-    parser = argparse.ArgumentParser(description="Ping a target IP from a remote Linux host.")
-    parser.add_argument("--target_ip", required=True, help="IP address to ping (e.g., 8.8.8.8).")
-    parser.add_argument("--host", required=True, help="IP address or hostname of the remote Linux host.")
-    parser.add_argument("--username", required=True, help="Username for SSH connection to the remote host.")
-    parser.add_argument("--password", required=True, help="Password for SSH connection to the remote host.")
+    parser = argparse.ArgumentParser(description="Execute ping from a Linux host to a target IP.")
+    parser.add_argument("--target_ip", required=True, help="The IP address to ping.")
+    parser.add_argument("--host", required=True, help="The IP address or hostname of the Linux host.")
+    parser.add_argument("--username", required=True, help="Username for SSH access to the Linux host.")
+    parser.add_argument("--password", required=True, help="Password for SSH access to the Linux host.")
 
     args = parser.parse_args()
 
-    device = {
-        "device_type": "linux", # Netmiko supports 'linux' for generic Linux hosts via SSH
+    device_params = {
+        "device_type": "linux", # Use 'linux' for Netmiko to connect to Linux hosts via SSH
         "host": args.host,
         "username": args.username,
         "password": args.password,
-        "global_delay_factor": 2 # Increase delay for slower SSH connections if needed
+        "port": 22, # Default SSH port
     }
 
     result = {
@@ -33,46 +33,58 @@ def main():
     }
 
     try:
-        with ConnectHandler(**device) as net_connect:
-            ping_command = f"ping -c 4 {args.target_ip}"
-            output = net_connect.send_command(ping_command, cmd_verify=False)
+        with ConnectHandler(**device_params) as net_connect:
+            ping_command = f"ping -c 4 {args.target_ip}" # -c 4 sends 4 packets
+            output = net_connect.send_command(ping_command)
 
-            result["data"]["raw_output"] = output
+            # Parse ping output
+            ping_data = {
+                "destination": args.target_ip,
+                "packets_transmitted": 0,
+                "packets_received": 0,
+                "packet_loss_percent": 100.0,
+                "rtt_min_ms": None,
+                "rtt_avg_ms": None,
+                "rtt_max_ms": None,
+                "rtt_mdev_ms": None,
+                "raw_output": output
+            }
 
-            # Regex to parse ping output
-            packet_loss_match = re.search(r"(\d+)% packet loss", output)
-            transmitted_match = re.search(r"(\d+) packets transmitted", output)
-            received_match = re.search(r"(\d+) received", output)
-            rtt_match = re.search(r"rtt min/avg/max/mdev = (\d+\.?\d*)/(\d+\.?\d*)/(\d+\.?\d*)/(\d+\.?\d*) ms", output)
+            # Example output parsing:
+            # --- 8.8.8.8 ping statistics ---
+            # 4 packets transmitted, 4 received, 0% packet loss, time 3004ms
+            # rtt min/avg/max/mdev = 9.500/9.875/10.200/0.298 ms
+            
+            # Packet statistics
+            match_stats = re.search(r"(\d+) packets transmitted, (\d+) received, (\d+)% packet loss", output)
+            if match_stats:
+                ping_data["packets_transmitted"] = int(match_stats.group(1))
+                ping_data["packets_received"] = int(match_stats.group(2))
+                ping_data["packet_loss_percent"] = float(match_stats.group(3))
 
-            if packet_loss_match and transmitted_match and received_match:
-                packet_loss = int(packet_loss_match.group(1))
-                transmitted_packets = int(transmitted_match.group(1))
-                received_packets = int(received_match.group(1))
-                
-                result["data"]["packet_loss_percent"] = packet_loss
-                result["data"]["transmitted_packets"] = transmitted_packets
-                result["data"]["received_packets"] = received_packets
+            # RTT statistics
+            match_rtt = re.search(r"rtt min/avg/max/mdev = (\d+\.?\d*)/(\d+\.?\d*)/(\d+\.?\d*)/(\d+\.?\d*) ms", output)
+            if match_rtt:
+                ping_data["rtt_min_ms"] = float(match_rtt.group(1))
+                ping_data["rtt_avg_ms"] = float(match_rtt.group(2))
+                ping_data["rtt_max_ms"] = float(match_rtt.group(3))
+                ping_data["rtt_mdev_ms"] = float(match_rtt.group(4))
 
-                if packet_loss == 0:
-                    result["status"] = "success"
-                    result["message"] = f"Ping to {args.target_ip} from {args.host} successful with 0% packet loss."
-                    if rtt_match:
-                        result["data"]["rtt_min_ms"] = float(rtt_match.group(1))
-                        result["data"]["rtt_avg_ms"] = float(rtt_match.group(2))
-                        result["data"]["rtt_max_ms"] = float(rtt_match.group(3))
-                        result["data"]["rtt_mdev_ms"] = float(rtt_match.group(4))
-                else:
-                    result["message"] = f"Ping to {args.target_ip} from {args.host} failed with {packet_loss}% packet loss."
+            result["data"] = ping_data
+
+            if ping_data["packets_received"] > 0 and ping_data["packet_loss_percent"] < 100:
+                result["status"] = "success"
+                result["message"] = f"Ping to {args.target_ip} successful. {ping_data['packet_loss_percent']}% packet loss."
             else:
-                result["message"] = "Could not parse ping output for packet loss information. Check raw_output for details."
+                result["status"] = "failure"
+                result["message"] = f"Ping to {args.target_ip} failed or had 100% packet loss."
 
     except NetmikoTimeoutException:
-        result["message"] = f"Connection to remote host {args.host} timed out. Check IP address, network connectivity, or SSH service."
+        result["message"] = f"Connection to host {args.host} timed out."
     except NetmikoAuthenticationException:
-        result["message"] = f"Authentication failed for user '{args.username}' on host {args.host}. Check username and password."
+        result["message"] = f"Authentication failed for host {args.host} with username {args.username}. Please check credentials."
     except SSHException as e:
-        result["message"] = f"SSH connection error to {args.host}: {str(e)}"
+        result["message"] = f"SSH error connecting to {args.host}: {str(e)}"
     except Exception as e:
         result["message"] = f"An unexpected error occurred: {str(e)}"
     finally:
