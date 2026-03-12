@@ -468,7 +468,11 @@ class SimpleGradingService:
             enhanced["command"] = parameters.get("command", "ip addr show")
             
         elif task.template_name == "service_check":
+            import re as _re
             service_name = parameters.get("service_name", "ssh")
+            # Validate service_name to prevent command injection
+            if not _re.match(r'^[a-zA-Z0-9_\-\.]+$', service_name):
+                raise ValueError(f"Invalid service name: {service_name}")
             enhanced["command"] = f"systemctl status {service_name}"
             
         elif task.template_name == "dhcp_check":

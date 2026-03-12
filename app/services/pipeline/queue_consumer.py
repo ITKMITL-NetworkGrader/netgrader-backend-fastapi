@@ -123,7 +123,8 @@ class QueueConsumer:
                 
             except json.JSONDecodeError as e:
                 logger.error(f"❌ Failed to parse job message: {e}")
-                logger.error(f"Message body: {message.body.decode()}")
+                body_preview = message.body.decode(errors="replace")[:100]
+                logger.error(f"Message body preview (truncated): {body_preview}...")
                 # Don't requeue malformed messages
                 
             except Exception as e:

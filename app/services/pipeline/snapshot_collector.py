@@ -167,10 +167,11 @@ class SnapshotCollector:
 
     @staticmethod
     def _build_prefix(course_name: str, lab_name: str, student_id: str) -> str:
-        safe_course = course_name.strip().replace(" ", "_")
-        safe_lab = lab_name.strip().replace(" ", "_")
-        safe_student = student_id.strip().replace(" ", "_")
-        return f"{safe_course}/{safe_lab}/{safe_student}"
+        # DSEC-11: Sanitize path components to prevent path traversal
+        import re as _re
+        def sanitize(v: str) -> str:
+            return _re.sub(r'[^a-zA-Z0-9_\-.]', '_', v.strip())
+        return f"{sanitize(course_name)}/{sanitize(lab_name)}/{sanitize(student_id)}"
 
     @staticmethod
     def _parse_gateways(route_output: str) -> Dict[str, str]:

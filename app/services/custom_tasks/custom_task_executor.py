@@ -664,12 +664,8 @@ class CustomTaskExecutor:
                 return None
 
             try:
+                # DSEC-09: Always treat as inline template content, never read from filesystem
                 template_content = textfsm_template
-                try:
-                    with open(textfsm_template, "r", encoding="utf-8") as template_file:
-                        template_content = template_file.read()
-                except OSError:
-                    template_content = textfsm_template
 
                 fsm = textfsm.TextFSM(io.StringIO(template_content))
                 raw_rows = fsm.ParseText(raw_output)

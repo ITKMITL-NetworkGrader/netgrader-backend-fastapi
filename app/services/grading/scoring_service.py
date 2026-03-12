@@ -153,8 +153,17 @@ class ScoringService:
                     
             elif comparison_type == "regex":
                 if isinstance(actual, str) and isinstance(expected, str):
-                    passed = bool(re.search(expected, actual, re.IGNORECASE))
-                    message = f"Expected pattern '{expected}' {'found' if passed else 'not found'} in '{actual}'"
+                    # DSEC-10: Guard against ReDoS with length limit and error handling
+                    if len(expected) > 500:
+                        passed = False
+                        message = f"Regex pattern too long ({len(expected)} chars)"
+                    else:
+                        try:
+                            passed = bool(re.search(expected, actual, re.IGNORECASE))
+                            message = f"Expected pattern '{expected}' {'found' if passed else 'not found'} in '{actual}'"
+                        except re.error as e:
+                            passed = False
+                            message = f"Invalid regex pattern: {e}"
                 else:
                     passed = False
                     message = f"Regex comparison requires strings: actual={type(actual)}, expected={type(expected)}"
@@ -260,7 +269,6 @@ class ScoringService:
         if total_case_points > 0:
             score_ratio = earned_case_points / total_case_points
             final_points = total_points * score_ratio
-            final_points = 0.0
             
         passed_cases = sum(1 for result in test_case_results if result.status == "passed")
         total_cases = len(test_case_results)

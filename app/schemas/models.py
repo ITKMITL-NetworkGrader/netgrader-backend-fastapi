@@ -1,6 +1,7 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import List, Dict, Any, Optional
 from enum import Enum
+from urllib.parse import urlparse
 
 class ExecutionMode(str, Enum):
     ISOLATED = "isolated"     # Fresh connection for each task (default)
@@ -82,7 +83,28 @@ class GradingJob(BaseModel):
     part: Part
     devices: List[Device]
     ip_mappings: Dict[str, str] = Field(default_factory=dict)
-    callback_url: Optional[str] = Field(None, description="Per-job callback URL override for playground jobs")
+    # NG-SEC-028/R3-1/R4-1: callback_url validated against CALLBACK_URL origin
+    callback_url: Optional[str] = None
+
+    @field_validator('callback_url')
+    @classmethod
+    def validate_callback_url(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        from app.core.config import config as app_config
+        allowed_origin = urlparse(app_config.CALLBACK_URL)
+        parsed = urlparse(v)
+        if parsed.scheme not in ('http', 'https'):
+            raise ValueError('callback_url must use http or https')
+        if parsed.hostname != allowed_origin.hostname:
+            raise ValueError(f'callback_url host must match trusted backend ({allowed_origin.hostname})')
+        # R5-1: Fill in default ports so comparison is never skipped
+        default_ports = {'http': 80, 'https': 443}
+        parsed_port = parsed.port or default_ports.get(parsed.scheme, 80)
+        allowed_port = allowed_origin.port or default_ports.get(allowed_origin.scheme, 80)
+        if parsed_port != allowed_port:
+            raise ValueError(f'callback_url port must match trusted backend ({allowed_port})')
+        return v
 
 
 class TestCaseResult(BaseModel):

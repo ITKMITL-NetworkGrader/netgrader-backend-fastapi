@@ -1,3 +1,4 @@
+import os
 import httpx
 import asyncio
 import logging
@@ -7,6 +8,8 @@ from pydantic import BaseModel
 
 from app.schemas.models import ProgressUpdate, GradingResult
 from app.core.config import config
+
+WORKER_CALLBACK_SECRET = os.getenv("WORKER_CALLBACK_SECRET", "")
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +26,8 @@ class APIClient:
         if self._client is None or self._client.is_closed:
             self._client = httpx.AsyncClient(
                 timeout=self.timeout,
-                limits=httpx.Limits(max_keepalive_connections=10, max_connections=20)
+                limits=httpx.Limits(max_keepalive_connections=10, max_connections=20),
+                headers={"X-Worker-Secret": WORKER_CALLBACK_SECRET}
             )
         return self._client
     

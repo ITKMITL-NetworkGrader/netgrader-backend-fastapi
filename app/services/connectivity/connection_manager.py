@@ -84,6 +84,7 @@ class ConnectionManager:
     def _create_nornir_inventory(self, devices_subset: Optional[List[str]] = None) -> str:
         """Create dynamic Nornir inventory from devices or subset"""
         temp_dir = tempfile.mkdtemp(prefix="nornir_connection_")
+        os.chmod(temp_dir, 0o700)
         inventory_dir = os.path.join(temp_dir, 'inventory')
         os.makedirs(inventory_dir, exist_ok=True)
         

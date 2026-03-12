@@ -3,6 +3,7 @@ Nornir Grading Service - Nornir-based network grading implementation
 """
 
 import asyncio
+import ipaddress
 import json
 import logging
 from contextlib import asynccontextmanager
@@ -13,6 +14,14 @@ import time
 import yaml
 from datetime import datetime
 from typing import Dict, Any, List, Optional
+
+
+def validate_target_ip(ip: str) -> str:
+    """DEEP2-3: Validate and normalize an IP address. Raises ValueError if invalid."""
+    try:
+        return str(ipaddress.ip_address(ip))
+    except ValueError:
+        raise ValueError(f"Invalid IP address: {ip}")
 from dataclasses import dataclass
 from pathlib import Path
 import re
@@ -259,7 +268,17 @@ class NornirGradingService:
         execution_mode = parameters.get("execution_mode", ExecutionMode.ISOLATED)
         session_id = parameters.get("stateful_session_id")
         connection_mode = execution_mode
-        
+
+        # DEEP2-3: Validate target_ip before use in subprocess
+        try:
+            target_ip = validate_target_ip(target_ip)
+        except (ValueError, TypeError):
+            return TaskResult(
+                task_id=task_id, status=TaskStatus.ERROR,
+                stderr="Invalid target_ip",
+                points_earned=0, points_possible=points,
+            )
+
         try:
             try:
                 connection_mode = self._normalize_execution_mode(execution_mode)

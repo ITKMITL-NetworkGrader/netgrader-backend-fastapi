@@ -386,6 +386,7 @@ class SNMPDetector:
         for username, password in credentials:
             try:
                 ssh = paramiko.SSHClient()
+                # D-10: AutoAddPolicy required for ephemeral GNS3 lab devices with no known_hosts
                 ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
                 ssh.connect(
                     hostname=ip_address,

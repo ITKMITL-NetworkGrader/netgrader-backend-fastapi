@@ -46,4 +46,22 @@ class Config:
 
     BATFISH_API: str = os.getenv("BATFISH_API", "http://localhost:8080")
 
+    def validate_production(self):
+        """Fail startup if insecure defaults are used in production."""
+        import sys
+        if os.getenv("ENVIRONMENT", "development") == "production":
+            if "guest:guest" in self.RABBITMQ_URL:
+                print("FATAL: Default RabbitMQ credentials in production", file=sys.stderr)
+                sys.exit(1)
+            if self.MINIO_ACCESS_KEY == "minioadmin":
+                print("FATAL: Default MinIO credentials in production", file=sys.stderr)
+                sys.exit(1)
+            if not os.getenv("WORKER_CALLBACK_SECRET"):
+                print("FATAL: WORKER_CALLBACK_SECRET not set in production", file=sys.stderr)
+                sys.exit(1)
+            if not os.getenv("WORKER_API_KEY"):
+                print("FATAL: WORKER_API_KEY not set in production", file=sys.stderr)
+                sys.exit(1)
+
 config = Config()
+config.validate_production()
