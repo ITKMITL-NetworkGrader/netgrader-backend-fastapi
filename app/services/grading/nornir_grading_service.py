@@ -250,8 +250,54 @@ class NornirGradingService:
         if isinstance(output, str) and handle.device_type in ("generic_termserver_telnet", "generic_telnet"):
             output = self._clean_telnet_output(output, handle.device_type, handle.device_os)
 
+        # Auto-detect prompt after every command to handle prompt changes
+        # (e.g., enable mode -> config mode, SSH jumps, etc.)
+        try:
+            handle.net_connect.set_base_prompt()
+        except Exception:
+            pass  # Ignore if prompt detection fails
+
         return output
-        
+
+    async def run_config_command(
+        self,
+        handle: CustomTaskConnectionHandle,
+        commands: List[str],
+        read_timeout: float = 60.0,
+    ) -> str:
+        try:
+            read_timeout = float(read_timeout if read_timeout is not None else 60.0)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("read_timeout must be a number") from exc
+
+        def _send_config() -> str:
+            # Use Netmiko's send_config_set - handles config mode automatically
+            output = handle.net_connect.send_config_set(
+                commands,
+                read_timeout=read_timeout,
+            )
+            return output
+
+        try:
+            output = await asyncio.to_thread(_send_config)
+        except Exception as exc:
+            raise CommandExecutionError(
+                f"Config commands failed",
+                cause=exc,
+                command=str(commands),
+            )
+
+        if isinstance(output, str) and handle.device_type in ("generic_termserver_telnet", "generic_telnet"):
+            output = self._clean_telnet_output(output, handle.device_type, handle.device_os)
+
+        # Auto-detect prompt after config commands to handle prompt changes
+        try:
+            handle.net_connect.set_base_prompt()
+        except Exception:
+            pass  # Ignore if prompt detection fails
+
+        return output
+
     async def add_device(self, device: Device):
         """Add a device to the grader via connection manager"""
         await self.connection_manager.add_device(device)

@@ -376,7 +376,7 @@ class CustomTaskExecutor:
             
             # Execute each command in sequence
             requires_network_connection = any(
-                cmd.action == "netmiko_send_command" for cmd in task_definition.commands
+                cmd.action in ("netmiko_send_command", "netmiko_send_config") for cmd in task_definition.commands
             )
 
             if requires_network_connection:
@@ -552,7 +552,7 @@ class CustomTaskExecutor:
                 stderr=f"Custom task execution failed: {str(e)}"
             )
     
-    _TUPLE_RESULT_ACTIONS = {"parse_output", "netmiko_send_command"}
+    _TUPLE_RESULT_ACTIONS = {"parse_output", "netmiko_send_command", "netmiko_send_config"}
 
     async def _execute_command(self, 
                              command: CustomTaskCommand,
@@ -575,6 +575,8 @@ class CustomTaskExecutor:
             # Execute based on action type
             if command.action == "netmiko_send_command":
                 result = await self._execute_netmiko_command(command, context, resolved_params)
+            elif command.action == "netmiko_send_config":
+                result = await self._execute_netmiko_config_command(command, context, resolved_params)
             elif command.action == "ping":
                 result = await self._execute_ping_command(command, context, resolved_params)
             elif command.action == "parse_output":
@@ -647,6 +649,41 @@ class CustomTaskExecutor:
 
         flat = structured_output if structured_output is not None else raw_output
         raw = {"raw_output": raw_output, "structured_output": structured_output}
+        return (flat, raw)
+
+    async def _execute_netmiko_config_command(
+        self,
+        command: CustomTaskCommand,
+        context: CustomTaskExecutionContext,
+        resolved_params: Dict[str, Any],
+    ) -> Any:
+        if context._conn_handle is None:
+            raise Exception("Custom task connection handle is missing")
+
+        # Get commands from parameters - can be a list or single command string
+        commands = resolved_params.get("commands", [])
+        if isinstance(commands, str):
+            # Single command as string - wrap in list
+            commands = [commands]
+        elif not isinstance(commands, list):
+            raise Exception("netmiko_send_config requires 'commands' parameter as list or string")
+
+        if not commands:
+            raise Exception("netmiko_send_config requires at least one command")
+
+        read_timeout = resolved_params.get("read_timeout", 60.0)
+
+        # Use Netmiko's send_config_set - handles config mode automatically
+        output = await self.nornir_service.run_config_command(
+            context._conn_handle,
+            commands=commands,
+            read_timeout=read_timeout,
+        )
+
+        raw_output = output if isinstance(output, str) else str(output)
+
+        flat = raw_output
+        raw = {"raw_output": raw_output, "commands_executed": commands}
         return (flat, raw)
 
     def _parse_textfsm_output(
