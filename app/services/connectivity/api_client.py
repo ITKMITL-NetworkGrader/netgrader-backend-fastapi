@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from app.schemas.models import ProgressUpdate, GradingResult
 from app.core.config import config
 
-WORKER_CALLBACK_SECRET = os.getenv("WORKER_CALLBACK_SECRET", "")
+WORKER_CALLBACK_SECRET = config.WORKER_CALLBACK_SECRET
 
 logger = logging.getLogger(__name__)
 

@@ -6,6 +6,7 @@ class Config:
     # RabbitMQ Configuration
     RABBITMQ_URL: str = os.getenv("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/")
     GRADING_QUEUE: str = os.getenv("GRADING_QUEUE", "grading_jobs")
+    WORKER_CALLBACK_SECRET: str = os.getenv("WORKER_CALLBACK_SECRET", "secret")
     
     # Ansible Configuration
     ANSIBLE_INVENTORY_DIR: str = os.getenv("ANSIBLE_INVENTORY_DIR", "/tmp/netgrader/inventories")

@@ -269,7 +269,6 @@ class NornirGradingService:
         session_id = parameters.get("stateful_session_id")
         connection_mode = execution_mode
 
-        # DEEP2-3: Validate target_ip before use in subprocess
         try:
             target_ip = validate_target_ip(target_ip)
         except (ValueError, TypeError):

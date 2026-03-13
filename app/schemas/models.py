@@ -83,7 +83,6 @@ class GradingJob(BaseModel):
     part: Part
     devices: List[Device]
     ip_mappings: Dict[str, str] = Field(default_factory=dict)
-    # NG-SEC-028/R3-1/R4-1: callback_url validated against CALLBACK_URL origin
     callback_url: Optional[str] = None
 
     @field_validator('callback_url')
@@ -98,7 +97,6 @@ class GradingJob(BaseModel):
             raise ValueError('callback_url must use http or https')
         if parsed.hostname != allowed_origin.hostname:
             raise ValueError(f'callback_url host must match trusted backend ({allowed_origin.hostname})')
-        # R5-1: Fill in default ports so comparison is never skipped
         default_ports = {'http': 80, 'https': 443}
         parsed_port = parsed.port or default_ports.get(parsed.scheme, 80)
         allowed_port = allowed_origin.port or default_ports.get(allowed_origin.scheme, 80)

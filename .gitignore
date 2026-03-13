@@ -2,7 +2,7 @@ venv
 .venv
 __pycache__
 .pytest_cache
-.claude
+.claude*
 .env
 nornir.log
 ntc-template-backup/
