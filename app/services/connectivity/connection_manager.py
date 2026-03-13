@@ -235,7 +235,7 @@ class ConnectionManager:
             'runner': {
                 'plugin': 'threaded',
                 'options': {
-                    'num_workers': min(len(target_devices), 5)  # Limit workers for connection isolation
+                    'num_workers': min(len(target_devices), 20)  # Increased for better I/O throughput
                 }
             },
             'logging': {

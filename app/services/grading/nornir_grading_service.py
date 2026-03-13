@@ -299,9 +299,13 @@ class NornirGradingService:
                 # Execute ping locally using subprocess for localhost devices
                 import subprocess
                 ping_command = ["ping", "-c", str(ping_count), target_ip]
-                
+
                 try:
-                    result = subprocess.run(ping_command, capture_output=True, text=True, timeout=30)
+                    # Wrap blocking subprocess with asyncio.to_thread for non-blocking execution
+                    result = await asyncio.get_running_loop().run_in_executor(
+                        None,
+                        lambda: subprocess.run(ping_command, capture_output=True, text=True, timeout=30)
+                    )
                     execution_time = time.time() - start_time
                     
                     # Analyze results for local ping

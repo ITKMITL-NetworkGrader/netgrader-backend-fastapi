@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 from typing import Dict, List, Optional
@@ -41,33 +42,48 @@ class SnapshotCollector:
         devices = self.grading_service.connection_manager.devices
         selected_ids = device_ids or list(devices.keys())
 
+        # Use semaphore to limit concurrent device processing (protect network hardware)
+        semaphore = asyncio.Semaphore(5)
+
+        async def process_device(device_id: str) -> Optional[tuple]:
+            """Process a single device and return result tuple."""
+            async with semaphore:
+                device = devices.get(device_id)
+                if not device:
+                    logger.warning("Device %s not registered with nornir service", device_id)
+                    return None
+
+                device_platform = (device.platform or "").lower()
+                key_prefix = f"snapshots/{self._build_prefix(course_name, lab_name, student_id)}"
+
+                if "linux" in device_platform:
+                    host_payload = await self._collect_host_data(device_id)
+                    if not host_payload:
+                        return None
+                    object_key = f"{key_prefix}/hosts/{device.id}.json"
+                    await self._upload_json(object_key, host_payload, bucket_name)
+                    return ('host', object_key)
+                else:
+                    config_payload = await self._collect_network_config(device_id)
+                    if not config_payload:
+                        return None
+                    object_key = f"{key_prefix}/configs/{device.id}.cfg"
+                    await self._upload_text(object_key, config_payload, bucket_name)
+                    return ('config', object_key)
+
+        # Process all devices in parallel with semaphore limiting
+        results = await asyncio.gather(*[process_device(did) for did in selected_ids], return_exceptions=True)
+
         config_objects: List[str] = []
         host_objects: List[str] = []
 
-        for device_id in selected_ids:
-            device = devices.get(device_id)
-            if not device:
-                logger.warning("Device %s not registered with nornir service", device_id)
-                continue
-
-            device_platform = (device.platform or "").lower()
-
-            key_prefix = f"snapshots/{self._build_prefix(course_name, lab_name, student_id)}"
-
-            if "linux" in device_platform:
-                host_payload = await self._collect_host_data(device_id)
-                if not host_payload:
-                    continue
-                object_key = f"{key_prefix}/hosts/{device.id}.json"
-                await self._upload_json(object_key, host_payload, bucket_name)
-                host_objects.append(object_key)
-            else:
-                config_payload = await self._collect_network_config(device_id)
-                if not config_payload:
-                    continue
-                object_key = f"{key_prefix}/configs/{device.id}.cfg"
-                await self._upload_text(object_key, config_payload, bucket_name)
-                config_objects.append(object_key)
+        for result in results:
+            if result and not isinstance(result, Exception):
+                obj_type, obj_key = result
+                if obj_type == 'host':
+                    host_objects.append(obj_key)
+                else:
+                    config_objects.append(obj_key)
 
         return {
             "configs": config_objects,

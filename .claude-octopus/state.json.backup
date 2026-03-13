@@ -1,0 +1,25 @@
+{
+  "version": "1.0.0",
+  "project_id": "7431cdcbc62898b0ced5630e042acfc3",
+  "current_workflow": "embrace",
+  "current_phase": "init",
+  "session_start": "2026-03-12T13:48:26Z",
+  "decisions": [],
+  "blockers": [],
+  "context": {
+    "discover": null,
+    "define": null,
+    "develop": null,
+    "deliver": null
+  },
+  "metrics": {
+    "phases_completed": 0,
+    "total_execution_time_minutes": 0,
+    "provider_usage": {
+      "codex": 0,
+      "gemini": 0,
+      "perplexity": 0,
+      "claude": 0
+    }
+  }
+}
