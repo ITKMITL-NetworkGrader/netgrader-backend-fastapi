@@ -310,30 +310,32 @@ CONSOLE_TERMINAL_TEST_JOB = {
         "groups": []
     },
     "devices": [
-        {
-            "id": "test",
-            "ip_address": "gns3.it.kmitl.ac.th",
-            "port": 5010,
-            "platform": "generic_telnet",
-            "device_os": "linux",
-            "role": "direct"
-        },
+        # {
+        #     "id": "test",
+        #     "ip_address": "gns3.it.kmitl.ac.th",
+        #     "port": 5010,
+        #     "platform": "generic_telnet",
+        #     "device_os": "linux",
+        #     "role": "direct"
+        # },
         # {
         #     "id": "test",
         #     "ip_address": "gns3.it.kmitl.ac.th",
         #     "port": 5195,
-        #     "platform": "generic_termserver_telnet",
+        #     "platform": "cisco_ios_telnet",
         #     "device_os": "cisco_ios",
         #     "role": "direct"
         # }
         # {
         #     "id": "test",
-        #     "ip_address": "10.70.38.101",
+        #     "ip_address": "10.0.24.2",
+        #     "port": 2223,
         #     "credentials": {
         #         "username": "admin",
-        #         "password": "cisco"
+        #         "password": "admin"
         #     },
         #     "platform": "cisco_ios",
+        #     "device_os": "cisco_ios",
         #     "role": "direct"
         # }
     ],
