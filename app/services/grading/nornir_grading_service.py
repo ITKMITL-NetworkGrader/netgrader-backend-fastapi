@@ -168,6 +168,28 @@ class NornirGradingService:
         lines = [line for line in cleaned.splitlines() if not _is_shell_prompt_line(line)]
         return "\n".join(lines).strip()
 
+    def _post_command_processing(
+        self,
+        handle: CustomTaskConnectionHandle,
+        output: str,
+    ) -> str:
+        """Apply post-processing to command output: clean telnet + detect prompt.
+
+        This reduces duplication in run_single_command and run_config_command.
+        """
+        # Clean telnet output if needed
+        if isinstance(output, str) and handle.device_type in ("generic_termserver_telnet", "generic_telnet"):
+            output = self._clean_telnet_output(output, handle.device_type, handle.device_os)
+
+        # Auto-detect prompt after every command to handle prompt changes
+        # (e.g., enable mode -> config mode, SSH jumps, etc.)
+        try:
+            handle.net_connect.set_base_prompt()
+        except Exception:
+            pass  # Ignore if prompt detection fails
+
+        return output
+
     @asynccontextmanager
     async def custom_task_connection(self, device_id: str):
         """Create a shared connection handle for custom tasks across template executions."""
@@ -247,17 +269,7 @@ class NornirGradingService:
                 command=command,
             )
 
-        if isinstance(output, str) and handle.device_type in ("generic_termserver_telnet", "generic_telnet"):
-            output = self._clean_telnet_output(output, handle.device_type, handle.device_os)
-
-        # Auto-detect prompt after every command to handle prompt changes
-        # (e.g., enable mode -> config mode, SSH jumps, etc.)
-        try:
-            handle.net_connect.set_base_prompt()
-        except Exception:
-            pass  # Ignore if prompt detection fails
-
-        return output
+        return self._post_command_processing(handle, output)
 
     async def run_config_command(
         self,
@@ -287,16 +299,7 @@ class NornirGradingService:
                 command=str(commands),
             )
 
-        if isinstance(output, str) and handle.device_type in ("generic_termserver_telnet", "generic_telnet"):
-            output = self._clean_telnet_output(output, handle.device_type, handle.device_os)
-
-        # Auto-detect prompt after config commands to handle prompt changes
-        try:
-            handle.net_connect.set_base_prompt()
-        except Exception:
-            pass  # Ignore if prompt detection fails
-
-        return output
+        return self._post_command_processing(handle, output)
 
     async def add_device(self, device: Device):
         """Add a device to the grader via connection manager"""
