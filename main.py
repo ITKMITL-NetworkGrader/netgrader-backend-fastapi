@@ -1,9 +1,7 @@
-import os
-import hmac
 import asyncio
 import logging
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException, Depends, Header
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from app.schemas.models import GradingJob
 from app.services.pipeline.queue_consumer import consumer, start_consumer, stop_consumer
@@ -56,22 +54,11 @@ app = FastAPI(
 # NG-SEC-011: Restrict CORS origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=os.getenv("ALLOWED_ORIGINS", "http://localhost:4000").split(","),
+    allow_origins=config.ALLOWED_ORIGINS.split(","),
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# NG-SEC-014: API key auth for job queue endpoint
-WORKER_API_KEY = os.getenv("WORKER_API_KEY")
-if not WORKER_API_KEY:
-    logger.warning("WORKER_API_KEY not set — /jobs/queue is unprotected!")
-
-async def verify_api_key(x_api_key: str = Header(None)):
-    if not WORKER_API_KEY:
-        raise HTTPException(status_code=500, detail="Worker API key not configured")
-    if not x_api_key or not hmac.compare_digest(x_api_key, WORKER_API_KEY):
-        raise HTTPException(status_code=403, detail="Invalid API key")
 
 @app.get("/")
 def root():
@@ -89,7 +76,7 @@ def health_check():
     }
 
 @app.post("/jobs/queue")
-async def queue_grading_job(job: GradingJob, _=Depends(verify_api_key)):
+async def queue_grading_job(job: GradingJob):
     """Add a grading job to the RabbitMQ queue"""
     try:
         await consumer.publish_job(job)

@@ -6,6 +6,8 @@ class Config:
     # RabbitMQ Configuration
     RABBITMQ_URL: str = os.getenv("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/")
     GRADING_QUEUE: str = os.getenv("GRADING_QUEUE", "grading_jobs")
+    
+    ALLOWED_ORIGINS: str = os.getenv("ALLOWED_ORIGINS", "http://localhost:4000")
     WORKER_CALLBACK_SECRET: str = os.getenv("WORKER_CALLBACK_SECRET", "secret")
     
     # Ansible Configuration
