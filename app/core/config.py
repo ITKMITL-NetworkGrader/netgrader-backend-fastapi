@@ -26,6 +26,15 @@ class Config:
     
     # Logging
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
+
+    # Sentry Configuration
+    SENTRY_DSN: str = os.getenv("SENTRY_DSN", "")
+    SENTRY_ENABLE_LOGS: bool = os.getenv("SENTRY_ENABLE_LOGS", "true").lower() == "true"
+    SENTRY_SEND_DEFAULT_PII: bool = os.getenv("SENTRY_SEND_DEFAULT_PII", "false").lower() == "true"
+    SENTRY_TRACES_SAMPLE_RATE: float = float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "1.0"))
+    SENTRY_PROFILE_SESSION_SAMPLE_RATE: float = float(os.getenv("SENTRY_PROFILE_SESSION_SAMPLE_RATE", "1.0"))
+    SENTRY_PROFILE_LIFECYCLE: str = os.getenv("SENTRY_PROFILE_LIFECYCLE", "trace")
+    SENTRY_ENVIRONMENT: str = os.getenv("SENTRY_ENVIRONMENT", os.getenv("ENVIRONMENT", "development"))
     
     # SNMP Configuration for device detection
     SNMP_COMMUNITY: str = os.getenv("SNMP_COMMUNITY", "netgrader")

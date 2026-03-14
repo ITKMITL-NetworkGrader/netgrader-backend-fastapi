@@ -52,6 +52,7 @@ watchfiles==1.1.0
 websockets==15.0.1
 yarl==1.20.1
 minio==7.2.9
+sentry-sdk[fastapi]>=2.0.0
 
 # Text parsing libraries for network output
 textfsm==1.1.3

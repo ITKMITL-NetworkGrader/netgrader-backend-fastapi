@@ -2,6 +2,7 @@ import os
 import hmac
 import asyncio
 import logging
+import sentry_sdk
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,6 +16,20 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+if config.SENTRY_DSN:
+    sentry_sdk.init(
+        dsn=config.SENTRY_DSN,
+        send_default_pii=config.SENTRY_SEND_DEFAULT_PII,
+        enable_logs=config.SENTRY_ENABLE_LOGS,
+        traces_sample_rate=config.SENTRY_TRACES_SAMPLE_RATE,
+        profile_session_sample_rate=config.SENTRY_PROFILE_SESSION_SAMPLE_RATE,
+        profile_lifecycle=config.SENTRY_PROFILE_LIFECYCLE,
+        environment=config.SENTRY_ENVIRONMENT,
+    )
+    logger.info("Sentry initialized")
+else:
+    logger.info("Sentry not configured (SENTRY_DSN is empty)")
 
 # Background task to run the queue consumer
 consumer_task = None
