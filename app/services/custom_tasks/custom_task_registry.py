@@ -176,6 +176,45 @@ class CustomTaskRegistry:
             List of template task names
         """
         return list(self._template_cache.keys())
+
+    def upsert_template(self, definition: CustomTaskDefinition) -> None:
+        """Insert or replace a template definition in the in-memory registry cache."""
+        self._template_cache[definition.task_name] = definition
+
+    def remove_template(self, task_name: str) -> None:
+        """Remove a template definition from the in-memory registry cache."""
+        self._template_cache.pop(task_name, None)
+
+    def register_temporary_template_from_yaml(
+        self,
+        yaml_content: str,
+        task_name_override: Optional[str] = None,
+        register: bool = True,
+    ) -> CustomTaskDefinition:
+        """
+        Parse, validate, and register a temporary template from raw YAML content.
+
+        This does not persist to MinIO. It is intended for live test-preview flows.
+        """
+        try:
+            template_data = yaml.safe_load(yaml_content)
+        except Exception as exc:
+            raise CustomTaskValidationError(f"Invalid YAML: {exc}") from exc
+
+        if not isinstance(template_data, dict):
+            raise CustomTaskValidationError("YAML content must be an object")
+
+        if task_name_override:
+            template_data["task_name"] = task_name_override
+
+        if "task_name" not in template_data:
+            raise CustomTaskValidationError("task_name is required")
+
+        definition = self._create_task_definition_from_dict(template_data)
+        self._validate_definition(definition, is_global_template=True)
+        if register:
+            self.upsert_template(definition)
+        return definition
     
     def is_global_template(self, task_name: str) -> bool:
         """

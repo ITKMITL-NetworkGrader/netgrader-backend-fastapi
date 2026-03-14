@@ -3,7 +3,10 @@ import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
 from app.schemas.models import GradingJob
+from app.services.grading.simple_grading_service import SimpleGradingService
+from app.services.custom_tasks.custom_task_registry import CustomTaskValidationError, CustomTaskDefinition
 from app.services.pipeline.queue_consumer import consumer, start_consumer, stop_consumer
 from app.core.config import config
 
@@ -16,6 +19,22 @@ logger = logging.getLogger(__name__)
 
 # Background task to run the queue consumer
 consumer_task = None
+template_test_lock = asyncio.Lock()
+
+
+class TemplateTestRunRequest(BaseModel):
+    yaml_content: str = Field(..., min_length=1)
+    job_payload: GradingJob
+    validate_only: bool = False
+    task_name_override: str | None = None
+
+
+class TemplateTestRunResponse(BaseModel):
+    success: bool
+    mode: str
+    template_name: str
+    validation: dict
+    grading_result: dict | None = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -88,6 +107,76 @@ async def queue_grading_job(job: GradingJob):
     except Exception as e:
         logger.error(f"Failed to queue grading job: {e}")
         raise HTTPException(status_code=500, detail="Failed to queue grading job")
+
+
+@app.post("/template-tests/run", response_model=TemplateTestRunResponse)
+async def run_template_test(request: TemplateTestRunRequest):
+    """
+    Run direct template validation/execution without RabbitMQ queueing.
+
+    This endpoint is designed for live template authoring workflows.
+    """
+    grading_service = SimpleGradingService()
+    await grading_service.initialize()
+
+    task_definition: CustomTaskDefinition | None = None
+    previous_definition: CustomTaskDefinition | None = None
+
+    async with template_test_lock:
+        try:
+            task_definition = grading_service.global_task_registry.register_temporary_template_from_yaml(
+                yaml_content=request.yaml_content,
+                task_name_override=request.task_name_override,
+                register=False,
+            )
+            previous_definition = grading_service.global_task_registry.get_template(task_definition.task_name)
+            grading_service.global_task_registry.upsert_template(task_definition)
+        except CustomTaskValidationError as exc:
+            raise HTTPException(status_code=400, detail=f"Template validation failed: {exc}")
+        except Exception as exc:
+            logger.error(f"Failed to register temporary template: {exc}")
+            raise HTTPException(status_code=500, detail="Failed to prepare template test run")
+
+        try:
+            validation = await grading_service.validate_job_payload(request.job_payload)
+            if not validation.get("valid", False):
+                return TemplateTestRunResponse(
+                    success=False,
+                    mode="validate_only" if request.validate_only else "execute",
+                    template_name=task_definition.task_name,
+                    validation=validation,
+                    grading_result=None,
+                )
+
+            if request.validate_only:
+                return TemplateTestRunResponse(
+                    success=True,
+                    mode="validate_only",
+                    template_name=task_definition.task_name,
+                    validation=validation,
+                    grading_result=None,
+                )
+
+            result = await grading_service.process_grading_job(request.job_payload)
+            return TemplateTestRunResponse(
+                success=result.status == "completed",
+                mode="execute",
+                template_name=task_definition.task_name,
+                validation=validation,
+                grading_result=result.model_dump(),
+            )
+        except HTTPException:
+            raise
+        except Exception as exc:
+            logger.error(f"Template test run failed: {exc}")
+            raise HTTPException(status_code=500, detail=f"Template test run failed: {exc}")
+        finally:
+            # Restore the previous template mapping to avoid polluting global runtime state.
+            if task_definition:
+                if previous_definition:
+                    grading_service.global_task_registry.upsert_template(previous_definition)
+                else:
+                    grading_service.global_task_registry.remove_template(task_definition.task_name)
 
 if __name__ == "__main__":
     import uvicorn

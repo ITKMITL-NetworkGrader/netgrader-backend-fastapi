@@ -181,13 +181,6 @@ class NornirGradingService:
         if isinstance(output, str) and handle.device_type in ("generic_termserver_telnet", "generic_telnet"):
             output = self._clean_telnet_output(output, handle.device_type, handle.device_os)
 
-        # Auto-detect prompt after every command to handle prompt changes
-        # (e.g., enable mode -> config mode, SSH jumps, etc.)
-        try:
-            handle.net_connect.set_base_prompt()
-        except Exception:
-            pass  # Ignore if prompt detection fails
-
         return output
 
     @asynccontextmanager
