@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import re
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -192,6 +193,116 @@ async def run_template_test(request: TemplateTestRunRequest):
                     grading_service.global_task_registry.upsert_template(previous_definition)
                 else:
                     grading_service.global_task_registry.remove_template(task_definition.task_name)
+
+class ParseDryRunRequest(BaseModel):
+    input: str
+    parser: str = "regex"
+    pattern: str | None = None
+    template: str | None = None
+    platform: str | None = None
+    command: str | None = None
+
+
+class ParseDryRunResponse(BaseModel):
+    success: bool
+    result: dict | None = None
+    error: str | None = None
+
+
+@app.post("/template-tests/parse-dry-run", response_model=ParseDryRunResponse)
+async def parse_dry_run(request: ParseDryRunRequest):
+    """
+    Execute a single parse_output action in isolation (no device connection).
+    Used by the frontend Dry Run tab to test parse_output steps without a live device.
+    Always returns HTTP 200; errors are surfaced via success=False + error field.
+    """
+    parser_type = (request.parser or "regex").lower()
+
+    try:
+        if parser_type == "regex":
+            if not request.pattern:
+                return ParseDryRunResponse(success=False, error="Regex parser requires 'pattern'")
+            try:
+                matches = re.findall(request.pattern, request.input, re.MULTILINE | re.IGNORECASE)
+            except re.error as exc:
+                return ParseDryRunResponse(success=False, error=f"Invalid regex pattern: {exc}")
+            # Flatten single-group tuples to plain strings for cleaner output
+            flat = [m[0] if isinstance(m, tuple) and len(m) == 1 else m for m in matches]
+            return ParseDryRunResponse(success=True, result={
+                "matches": flat,
+                "match_count": len(flat),
+                "first_match": flat[0] if flat else None,
+            })
+
+        if parser_type == "textfsm":
+            # NTC-templates mode: platform + command provided (pre-built templates)
+            if request.platform and request.command:
+                try:
+                    from ntc_templates.parse import parse_output as ntc_parse_output
+                except ImportError:
+                    return ParseDryRunResponse(success=False, error="ntc-templates is not available in this environment")
+                try:
+                    rows = ntc_parse_output(platform=request.platform, command=request.command, data=request.input or "")
+                except Exception as exc:
+                    return ParseDryRunResponse(success=False, error=f"NTC-templates parsing failed: {exc}")
+                return ParseDryRunResponse(success=True, result={
+                    "records": rows,
+                    "match_count": len(rows),
+                    "mode": "ntc-templates",
+                })
+            # Inline TextFSM mode: raw template string provided
+            try:
+                import textfsm as _textfsm
+                import io as _io
+            except ImportError:
+                return ParseDryRunResponse(success=False, error="TextFSM parser is not available in this environment")
+            if not request.template:
+                return ParseDryRunResponse(success=False, error="TextFSM parser requires either 'platform'+'command' (NTC-templates) or a 'template' string")
+            try:
+                fsm = _textfsm.TextFSM(_io.StringIO(request.template))
+                rows = fsm.ParseText(request.input or "")
+            except Exception as exc:
+                return ParseDryRunResponse(success=False, error=f"TextFSM parsing failed: {exc}")
+            structured = [dict(zip(fsm.header, r)) for r in rows]
+            return ParseDryRunResponse(success=True, result={
+                "records": structured,
+                "match_count": len(structured),
+                "template_header": list(fsm.header),
+                "mode": "inline",
+            })
+
+        if parser_type == "jinja":
+            import json as _json
+            import yaml as _yaml
+            from jinja2 import TemplateError
+            from jinja2.sandbox import SandboxedEnvironment
+            tmpl_src = request.template or request.pattern or ""
+            if not tmpl_src:
+                return ParseDryRunResponse(success=False, error="Jinja parser requires a 'template' or 'pattern' parameter")
+            env = SandboxedEnvironment(trim_blocks=True, lstrip_blocks=True)
+            try:
+                rendered = env.from_string(tmpl_src).render(input=request.input or "")
+            except TemplateError as exc:
+                return ParseDryRunResponse(success=False, error=f"Jinja rendering failed: {exc}")
+            # Attempt to auto-parse rendered output as JSON then YAML
+            structured = rendered
+            stripped = rendered.strip() if isinstance(rendered, str) else rendered
+            if stripped:
+                try:
+                    structured = _json.loads(stripped)
+                except Exception:
+                    try:
+                        structured = _yaml.safe_load(stripped)
+                    except Exception:
+                        pass
+            return ParseDryRunResponse(success=True, result={"rendered": rendered, "data": structured})
+
+        return ParseDryRunResponse(success=False, error=f"Unsupported parser type '{parser_type}'. Supported: regex, textfsm, jinja")
+
+    except Exception as exc:
+        logger.error(f"parse_dry_run failed unexpectedly: {exc}")
+        return ParseDryRunResponse(success=False, error=str(exc))
+
 
 if __name__ == "__main__":
     import uvicorn
