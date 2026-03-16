@@ -116,6 +116,12 @@ async def run_template_test(request: TemplateTestRunRequest):
 
     This endpoint is designed for live template authoring workflows.
     """
+    if len(request.yaml_content.encode("utf-8")) > config.TEMPLATE_TEST_MAX_YAML_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail=f"YAML template exceeds the {config.TEMPLATE_TEST_MAX_YAML_SIZE // 1024} KB size limit"
+        )
+
     grading_service = SimpleGradingService()
     await grading_service.initialize()
 
@@ -157,7 +163,16 @@ async def run_template_test(request: TemplateTestRunRequest):
                     grading_result=None,
                 )
 
-            result = await grading_service.process_grading_job(request.job_payload)
+            try:
+                result = await asyncio.wait_for(
+                    grading_service.process_grading_job(request.job_payload),
+                    timeout=config.TEMPLATE_TEST_TIMEOUT,
+                )
+            except asyncio.TimeoutError:
+                raise HTTPException(
+                    status_code=504,
+                    detail=f"Template test timed out after {config.TEMPLATE_TEST_TIMEOUT} seconds"
+                )
             return TemplateTestRunResponse(
                 success=result.status == "completed",
                 mode="execute",

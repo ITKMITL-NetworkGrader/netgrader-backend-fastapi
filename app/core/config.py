@@ -39,6 +39,10 @@ class Config:
     CUSTOM_TASK_REGISTRY_DIR: str = os.getenv("CUSTOM_TASK_REGISTRY_DIR", "custom_tasks")
     STRICT_MODE: bool = os.getenv("STRICT_MODE", "true").lower() == "true"
 
+    # Template Test Sandbox Quotas
+    TEMPLATE_TEST_TIMEOUT: int = int(os.getenv("TEMPLATE_TEST_TIMEOUT", "60"))
+    TEMPLATE_TEST_MAX_YAML_SIZE: int = int(os.getenv("TEMPLATE_TEST_MAX_YAML_SIZE", "51200"))  # 50 KB
+
     # MinIO Configuration
     MINIO_ENDPOINT: str = os.getenv("MINIO_ENDPOINT", "localhost")
     MINIO_PORT: int = int(os.getenv("MINIO_PORT", "9000"))
