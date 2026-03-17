@@ -239,8 +239,7 @@ class ConnectionManager:
                 }
             },
             'logging': {
-                'enabled': True,
-                'level': 'WARNING'  # Reduce noise in logs
+                'enabled': False  # Disable file logging; Python logging handles output
             }
         }
         
