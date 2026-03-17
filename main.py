@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import re
+from typing import Any
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -205,7 +206,7 @@ class ParseDryRunRequest(BaseModel):
 
 class ParseDryRunResponse(BaseModel):
     success: bool
-    result: dict | None = None
+    result: Any | None = None
     error: str | None = None
 
 
@@ -245,11 +246,7 @@ async def parse_dry_run(request: ParseDryRunRequest):
                     rows = ntc_parse_output(platform=request.platform, command=request.command, data=request.input or "")
                 except Exception as exc:
                     return ParseDryRunResponse(success=False, error=f"NTC-templates parsing failed: {exc}")
-                return ParseDryRunResponse(success=True, result={
-                    "records": rows,
-                    "match_count": len(rows),
-                    "mode": "ntc-templates",
-                })
+                return ParseDryRunResponse(success=True, result=rows)
             # Inline TextFSM mode: raw template string provided
             try:
                 import textfsm as _textfsm
@@ -264,12 +261,7 @@ async def parse_dry_run(request: ParseDryRunRequest):
             except Exception as exc:
                 return ParseDryRunResponse(success=False, error=f"TextFSM parsing failed: {exc}")
             structured = [dict(zip(fsm.header, r)) for r in rows]
-            return ParseDryRunResponse(success=True, result={
-                "records": structured,
-                "match_count": len(structured),
-                "template_header": list(fsm.header),
-                "mode": "inline",
-            })
+            return ParseDryRunResponse(success=True, result=structured)
 
         if parser_type == "jinja":
             import json as _json
@@ -280,8 +272,15 @@ async def parse_dry_run(request: ParseDryRunRequest):
             if not tmpl_src:
                 return ParseDryRunResponse(success=False, error="Jinja parser requires a 'template' or 'pattern' parameter")
             env = SandboxedEnvironment(trim_blocks=True, lstrip_blocks=True)
+            # Try to parse input as structured data (JSON) so templates can
+            # iterate over objects directly. Falls back to raw string if not JSON.
+            raw_input = request.input or ""
             try:
-                rendered = env.from_string(tmpl_src).render(input=request.input or "")
+                input_value = _json.loads(raw_input)
+            except Exception:
+                input_value = raw_input
+            try:
+                rendered = env.from_string(tmpl_src).render(input=input_value)
             except TemplateError as exc:
                 return ParseDryRunResponse(success=False, error=f"Jinja rendering failed: {exc}")
             # Attempt to auto-parse rendered output as JSON then YAML
@@ -295,13 +294,90 @@ async def parse_dry_run(request: ParseDryRunRequest):
                         structured = _yaml.safe_load(stripped)
                     except Exception:
                         pass
-            return ParseDryRunResponse(success=True, result={"rendered": rendered, "data": structured})
+            return ParseDryRunResponse(success=True, result=structured)
 
         return ParseDryRunResponse(success=False, error=f"Unsupported parser type '{parser_type}'. Supported: regex, textfsm, jinja")
 
     except Exception as exc:
         logger.error(f"parse_dry_run failed unexpectedly: {exc}")
         return ParseDryRunResponse(success=False, error=str(exc))
+
+
+class ValidateDryRunRequest(BaseModel):
+    variables: dict
+    rules: list[dict]   # [{field, condition, value, description?}]
+    parameters: dict = {}  # Template parameters; Jinja in rule values is rendered with {**parameters, **variables}
+
+
+class ValidateDryRunResponse(BaseModel):
+    success: bool
+    results: list[dict]
+    all_passed: bool
+    error: str | None = None
+
+
+@app.post("/template-tests/validate-dry-run", response_model=ValidateDryRunResponse)
+async def validate_dry_run(request: ValidateDryRunRequest):
+    """
+    Evaluate validation rules against a user-supplied variables dict.
+    Used by the frontend Dry Run tab — no device connection required.
+    Always returns HTTP 200; errors are surfaced via success=False + error field.
+    """
+    try:
+        from app.services.custom_tasks.custom_task_executor import CustomTaskValidationEngine
+        from app.services.custom_tasks.custom_task_registry import (
+            CustomTaskValidationRule, CustomTaskValidationCondition
+        )
+        from jinja2.sandbox import SandboxedEnvironment
+        from jinja2 import TemplateError as JinjaTemplateError
+
+        # Build Jinja context: parameters take lower precedence than variables so
+        # live register values always win over template defaults.
+        jinja_ctx = {**request.parameters, **request.variables}
+        jinja_env = SandboxedEnvironment()
+
+        def _render(value: any) -> any:
+            """Render Jinja expressions inside string values; non-strings pass through."""
+            if not isinstance(value, str):
+                return value
+            try:
+                return jinja_env.from_string(value).render(**jinja_ctx)
+            except JinjaTemplateError:
+                return value  # return raw string if template is invalid
+
+        results = []
+        for rule_dict in request.rules:
+            rendered_field       = _render(rule_dict.get("field", ""))
+            rendered_value       = _render(rule_dict.get("value"))
+            rendered_description = _render(rule_dict.get("description"))
+            try:
+                condition = CustomTaskValidationCondition(rule_dict.get("condition", "equals"))
+            except ValueError:
+                results.append({
+                    "field":       rendered_field,
+                    "condition":   rule_dict.get("condition", "?"),
+                    "expected":    rendered_value,
+                    "actual":      None,
+                    "passed":      False,
+                    "description": rendered_description,
+                    "error":       f"Unknown condition: {rule_dict.get('condition')}",
+                })
+                continue
+            rule = CustomTaskValidationRule(
+                field=rendered_field,
+                condition=condition,
+                value=rendered_value,
+                description=rendered_description,
+            )
+            results.append(CustomTaskValidationEngine.validate_result(request.variables, rule))
+        return ValidateDryRunResponse(
+            success=True,
+            results=results,
+            all_passed=all(r.get("passed", False) for r in results),
+        )
+    except Exception as exc:
+        logger.error(f"validate_dry_run failed unexpectedly: {exc}")
+        return ValidateDryRunResponse(success=False, results=[], all_passed=False, error=str(exc))
 
 
 if __name__ == "__main__":
