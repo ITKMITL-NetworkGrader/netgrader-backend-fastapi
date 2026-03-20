@@ -53,6 +53,11 @@ class Config:
 
     BATFISH_API: str = os.getenv("BATFISH_API", "http://localhost:8080")
 
+    # ContainerLab API server (grading worker side — server-side only, never in job payloads)
+    CLAB_SERVER_URL: str = os.getenv("CLAB_SERVER_URL", "http://localhost:8080")
+    CLAB_ADMIN_USERNAME: str = os.getenv("CLAB_ADMIN_USERNAME", "admin")
+    CLAB_ADMIN_PASSWORD: str = os.getenv("CLAB_ADMIN_PASSWORD", "")
+
     def validate_production(self):
         """Fail startup if insecure defaults are used in production."""
         import sys

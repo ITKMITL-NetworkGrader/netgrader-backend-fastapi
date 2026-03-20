@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, field_validator
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Literal
 from enum import Enum
 from urllib.parse import urlparse
 
@@ -38,6 +38,8 @@ class Device(BaseModel):
     role: Optional[str] = Field("direct", description="Device role: 'proxy_host', 'proxy_target', 'direct'")
     proxy_host: Optional[str] = Field(None, description="Proxy host device ID for two-stage SSH")
     proxy_credentials: Optional[Dict[str, str]] = Field(None, description="Credentials for proxy target device")
+    transport: Literal['ssh', 'docker_exec'] = Field('ssh', description="Transport method: 'ssh' for standard SSH, 'docker_exec' for ContainerLab exec API")
+    provider_data: Optional[Dict[str, Any]] = Field(None, description="Provider-specific metadata (e.g., clab node name, lab name for docker_exec transport)")
 
 class TestCase(BaseModel):
     """Individual test case with expected vs actual comparison"""

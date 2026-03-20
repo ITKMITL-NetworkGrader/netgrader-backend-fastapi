@@ -118,6 +118,9 @@ class NornirGradingService:
         self.connection_manager = ConnectionManager()
         self._initialized = False
         self._custom_task_registry = None  # Set externally after initialization
+        # Devices that use docker_exec transport are stored here and never added
+        # to the Nornir connection manager (they don't need SSH connections).
+        self._clab_devices: Dict[str, Device] = {}
         # self._ensure_textfsm_templates()
     
     async def _run_nornir_task(self, device_nr, task, **kwargs):
@@ -295,7 +298,16 @@ class NornirGradingService:
         return self._post_command_processing(handle, output)
 
     async def add_device(self, device: Device):
-        """Add a device to the grader via connection manager"""
+        """Add a device to the grader.
+
+        Devices with transport='docker_exec' are registered locally and never
+        passed to the Nornir connection manager — they are reached via the
+        clab-api-server exec endpoint instead.
+        """
+        if device.transport == 'docker_exec':
+            self._clab_devices[device.id] = device
+            logger.info(f"Registered clab exec device: {device.id} (transport=docker_exec)")
+            return
         await self.connection_manager.add_device(device)
         logger.info(f"Added device: {device.id} ({device.ip_address}) - {device.platform}")
     
@@ -594,6 +606,73 @@ class NornirGradingService:
                 points_possible=points
             )
 
+    async def _execute_command_via_clab_exec(
+        self,
+        task_id: str,
+        device_id: str,
+        command: str,
+        points: float,
+        start_time: float,
+    ) -> TaskResult:
+        """Execute a command through the clab-api-server exec endpoint.
+
+        Reads lab_name and node_name from the device's provider_data.
+        """
+        from app.services.connectivity.clab_exec_client import get_clab_exec_client
+
+        device = self._clab_devices.get(device_id)
+        if device is None:
+            return TaskResult(
+                task_id=task_id,
+                status=TaskStatus.ERROR,
+                stderr=f"docker_exec device '{device_id}' not registered",
+                execution_time=time.time() - start_time,
+                points_earned=0,
+                points_possible=points,
+            )
+
+        provider_data = device.provider_data or {}
+        lab_name = provider_data.get("lab_name")
+        node_name = provider_data.get("node_name")
+
+        if not lab_name or not node_name:
+            return TaskResult(
+                task_id=task_id,
+                status=TaskStatus.ERROR,
+                stderr=(
+                    f"docker_exec device '{device_id}' is missing 'lab_name' or 'node_name' "
+                    "in provider_data"
+                ),
+                execution_time=time.time() - start_time,
+                points_earned=0,
+                points_possible=points,
+            )
+
+        try:
+            client = get_clab_exec_client()
+            result = await client.exec_command(lab_name, node_name, command)
+            success = result.exit_code == 0
+            return TaskResult(
+                task_id=task_id,
+                status=TaskStatus.PASSED if success else TaskStatus.FAILED,
+                stdout=result.stdout,
+                stderr=result.stderr,
+                execution_time=time.time() - start_time,
+                points_earned=points if success else 0,
+                points_possible=points,
+            )
+        except Exception as exc:
+            error = classify_exception(exc)
+            logger.error(f"clab exec command failed for {device_id}: {error.internal_details}")
+            return TaskResult(
+                task_id=task_id,
+                status=TaskStatus.ERROR,
+                stderr=error.user_message,
+                execution_time=time.time() - start_time,
+                points_earned=0,
+                points_possible=points,
+            )
+
     async def execute_command_task(self, task_id: str, device_id: str, parameters: Dict[str, Any]) -> TaskResult:
         """Execute command task using nornir-netmiko with connection isolation"""
         start_time = time.time()
@@ -604,6 +683,12 @@ class NornirGradingService:
         use_textfsm = parameters.get("use_textfsm", False)
         textfsm_template = parameters.get("textfsm_template")
         last_read = parameters.get("last_read") # New parameter for timing tasks
+
+        # Route docker_exec devices to the clab exec client instead of Nornir/Netmiko
+        if device_id in self._clab_devices:
+            return await self._execute_command_via_clab_exec(
+                task_id, device_id, command or "", points, start_time
+            )
 
         try:
             try:
