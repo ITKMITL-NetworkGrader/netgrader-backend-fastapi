@@ -142,15 +142,6 @@ class NornirGradingService:
         self._custom_task_registry = registry
 
     @staticmethod
-    def _normalize_execution_mode(mode: Any) -> ExecutionMode:
-        """Normalize execution mode payload values to ExecutionMode enum."""
-        if isinstance(mode, ExecutionMode):
-            return mode
-        if isinstance(mode, str):
-            return ExecutionMode(mode.strip().lower())
-        return ExecutionMode(mode)
-
-    @staticmethod
     def _clean_telnet_output(output: str, device_type: str, device_os: str) -> str:
         """Remove prompt noise and control sequences from telnet command output."""
         if not isinstance(output, str):
@@ -184,9 +175,9 @@ class NornirGradingService:
         return output
 
     @asynccontextmanager
-    async def custom_task_connection(self, device_id: str):
+    async def custom_task_connection(self, device_id: str, job_id: str = ""):
         """Create a shared connection handle for custom tasks across template executions."""
-        shared_session_id = f"shared_{device_id}"
+        shared_session_id = f"shared_{job_id}_{device_id}" if job_id else f"shared_{device_id}"
         async with self.connection_manager.get_connection(
             device_id=device_id,
             connection_mode=ExecutionMode.SHARED,
@@ -307,10 +298,6 @@ class NornirGradingService:
         target_ip = parameters.get("target_ip")
         ping_count = parameters.get("ping_count", 3)
         points = parameters.get("points", 10.0)
-        execution_mode = parameters.get("execution_mode", ExecutionMode.ISOLATED)
-        session_id = parameters.get("stateful_session_id")
-        connection_mode = execution_mode
-
         try:
             target_ip = validate_target_ip(target_ip)
         except (ValueError, TypeError):
@@ -321,19 +308,6 @@ class NornirGradingService:
             )
 
         try:
-            try:
-                connection_mode = self._normalize_execution_mode(execution_mode)
-            except ValueError:
-                valid_modes = ", ".join(mode.value for mode in ExecutionMode)
-                return TaskResult(
-                    task_id=task_id,
-                    status=TaskStatus.ERROR,
-                    stderr=f"Invalid execution_mode '{execution_mode}'. Expected one of: {valid_modes}",
-                    execution_time=time.time() - start_time,
-                    points_earned=0,
-                    points_possible=points,
-                )
-
             # Check if this is a localhost device first
             device = self.connection_manager.devices.get(device_id)
             if device and (device.ip_address in ["localhost", "127.0.0.1"] or device.ip_address.startswith("127.")):
@@ -371,16 +345,17 @@ class NornirGradingService:
                         points_possible=points
                     )
             
-            # Use connection manager for remote devices
+            # Use connection manager — shared per device so all tasks reuse one SSH session
+            job_id = parameters.get("job_id", "")
             async with self.connection_manager.get_connection(
-                device_id=device_id, 
-                connection_mode=connection_mode,
-                session_id=session_id
+                device_id=device_id,
+                connection_mode=ExecutionMode.SHARED,
+                session_id=f"shared_{job_id}_{device_id}" if job_id else f"shared_{device_id}",
             ) as context:
-                
+
                 # Get filtered Nornir instance for this device
                 device_nr = self.connection_manager.get_filtered_nornir(context, device_id)
-                
+
                 # Get device OS to determine ping command format
                 device_host = device_nr.inventory.hosts[device_id]
                 device_os = device_host.data.get("device_os", "") if hasattr(device_host, 'data') else ""
@@ -445,34 +420,18 @@ class NornirGradingService:
         start_time = time.time()
         target_ip = parameters.get("target_ip")
         points = parameters.get("points", 10.0)
-        execution_mode = parameters.get("execution_mode", ExecutionMode.ISOLATED)
-        session_id = parameters.get("stateful_session_id")
-        connection_mode = execution_mode
-        
         try:
-            try:
-                connection_mode = self._normalize_execution_mode(execution_mode)
-            except ValueError:
-                valid_modes = ", ".join(mode.value for mode in ExecutionMode)
-                return TaskResult(
-                    task_id=task_id,
-                    status=TaskStatus.ERROR,
-                    stderr=f"Invalid execution_mode '{execution_mode}'. Expected one of: {valid_modes}",
-                    execution_time=time.time() - start_time,
-                    points_earned=0,
-                    points_possible=points,
-                )
-
-            # Use connection manager for isolated connection
+            # Use connection manager — shared per device so all tasks reuse one SSH session
+            job_id = parameters.get("job_id", "")
             async with self.connection_manager.get_connection(
-                device_id=device_id, 
-                connection_mode=connection_mode,
-                session_id=session_id
+                device_id=device_id,
+                connection_mode=ExecutionMode.SHARED,
+                session_id=f"shared_{job_id}_{device_id}" if job_id else f"shared_{device_id}",
             ) as context:
-                
+
                 # Get filtered Nornir instance for this device
                 device_nr = self.connection_manager.get_filtered_nornir(context, device_id)
-                
+
                 # Get device platform
                 device_host = device_nr.inventory.hosts[device_id]
                 device_platform = device_host.platform
@@ -599,36 +558,22 @@ class NornirGradingService:
         start_time = time.time()
         command = parameters.get("command")
         points = parameters.get("points", 10.0)
-        connection_mode = parameters.get("execution_mode", ExecutionMode.ISOLATED)
-        session_id = parameters.get("stateful_session_id")
         use_textfsm = parameters.get("use_textfsm", False)
         textfsm_template = parameters.get("textfsm_template")
-        last_read = parameters.get("last_read") # New parameter for timing tasks
+        last_read = parameters.get("last_read")  # New parameter for timing tasks
 
         try:
-            try:
-                connection_mode = self._normalize_execution_mode(connection_mode)
-            except ValueError:
-                valid_modes = ", ".join(mode.value for mode in ExecutionMode)
-                return TaskResult(
-                    task_id=task_id,
-                    status=TaskStatus.ERROR,
-                    stderr=f"Invalid execution_mode '{parameters.get('execution_mode')}'. Expected one of: {valid_modes}",
-                    execution_time=time.time() - start_time,
-                    points_earned=0,
-                    points_possible=points,
-                )
-
-            # Use connection manager for isolated connection
+            # Use connection manager — shared per device so all tasks reuse one SSH session
+            job_id = parameters.get("job_id", "")
             async with self.connection_manager.get_connection(
-                device_id=device_id, 
-                connection_mode=connection_mode,
-                session_id=session_id
+                device_id=device_id,
+                connection_mode=ExecutionMode.SHARED,
+                session_id=f"shared_{job_id}_{device_id}" if job_id else f"shared_{device_id}",
             ) as context:
-                
+
                 # Get filtered Nornir instance for this device
                 device_nr = self.connection_manager.get_filtered_nornir(context, device_id)
-                
+
                 # Execute command via netmiko
                 netmiko_kwargs = {
                     "command_string": command,

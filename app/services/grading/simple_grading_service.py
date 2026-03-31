@@ -5,10 +5,11 @@ Integrates Nornir-based grading system with device detection for
 automated network testing and grading.
 """
 
+import asyncio
 import logging
 import time
 from datetime import datetime
-from typing import Dict, Any
+from typing import Dict, Any, List, Optional
 # Import existing models and services
 from app.schemas.models import GradingJob, TestResult, GradingResult, Device, NetworkTask, ProgressUpdate, DebugInfo, TaskGroup, GroupResult, TaskResult, TaskStatus
 from app.services.connectivity.api_client import APIClient as ApiClient
@@ -274,21 +275,15 @@ class SimpleGradingService:
         
         task_index = 0
         
-        # Process ungrouped tasks first
+        # Process ungrouped tasks first — run concurrently across devices
         logger.info(f"Processing {len(ungrouped_tasks)} ungrouped tasks")
-        for task in ungrouped_tasks:
-            if execution_cancelled:
-                break
-                
-            task_index += 1
-            logger.info(f"Processing task {task_index}/{total_tasks}: {task.task_id}")
-            
-            # Execute individual task
-            test_result = await self._execute_single_task(task, job, task_index, total_tasks, callback_url=callback_url)
-            test_results.append(test_result)
-            
-            total_points_possible += task.points
-            total_points_earned += test_result.points_earned
+        if ungrouped_tasks:
+            ungrouped_results, task_index = await self._run_tasks_parallel(
+                ungrouped_tasks, job, task_index, total_tasks, callback_url=callback_url
+            )
+            test_results.extend(ungrouped_results)
+            total_points_possible += sum(t.points for t in ungrouped_tasks)
+            total_points_earned += sum(r.points_earned for r in ungrouped_results)
         
         # Process task groups
         logger.info(f"Processing {len(grouped_tasks)} task groups")
@@ -303,21 +298,11 @@ class SimpleGradingService:
             
             logger.info(f"Processing group: {group_config.title} ({len(group_tasks)} tasks)")
             
-            # Execute all tasks in the group
-            group_task_results = []
-            group_start_time = time.time()
-            
-            for task in group_tasks:
-                if execution_cancelled:
-                    break
-                    
-                task_index += 1
-                logger.info(f"Processing group task {task_index}/{total_tasks}: {task.task_id}")
-                
-                # Execute task (but don't count individual points yet)
-                test_result = await self._execute_single_task(task, job, task_index, total_tasks, group_config.title, callback_url=callback_url)
-                group_task_results.append(test_result)
-                test_results.append(test_result)
+            # Execute all tasks in the group — run concurrently across devices
+            group_task_results, task_index = await self._run_tasks_parallel(
+                group_tasks, job, task_index, total_tasks, group_config.title, callback_url=callback_url
+            )
+            test_results.extend(group_task_results)
             
             # Evaluate group
             if not execution_cancelled:
@@ -526,15 +511,9 @@ class SimpleGradingService:
         enhanced_params = self._enhance_nornir_task_parameters(task, {
             **task_params,
             "points": task.points,
+            "job_id": job.job_id,
             # Add IP mappings for parameter resolution
             **ip_mappings
-        })
-        
-        # Add execution mode parameters from task
-        enhanced_params.update({
-            "execution_mode": task.execution_mode,
-            "stateful_session_id": task.stateful_session_id,
-            "connection_timeout": task.connection_timeout
         })
         
         task_result = await self.grader.execute_task(
@@ -555,6 +534,99 @@ class SimpleGradingService:
         
         return test_result
     
+    def _make_error_result(self, task: NetworkTask) -> TestResult:
+        """Create an error TestResult for a task that failed unexpectedly."""
+        return TestResult(
+            test_name=task.task_id,
+            status=TaskStatus.ERROR.value,
+            points_earned=0,
+            points_possible=task.points,
+            execution_time=0.0,
+            message="Task execution failed due to an unexpected error.",
+            test_case_results=[],
+            extracted_data={
+                "task_type": task.template_name,
+                "execution_device": task.execution_device,
+            },
+            raw_output="",
+            group_id=task.group_id,
+        )
+
+    async def _run_tasks_parallel(
+        self,
+        tasks: List[NetworkTask],
+        job: GradingJob,
+        task_index: int,
+        total_tasks: int,
+        group_name: Optional[str] = None,
+        callback_url: Optional[str] = None,
+    ) -> tuple[List[TestResult], int]:
+        """
+        Execute tasks by grouping them per execution device.
+
+        All tasks share one persistent SSH connection per device (SHARED mode).
+        Tasks on the same device run sequentially — the Netmiko connection is not
+        thread-safe, and sequential ordering ensures state built up by one task
+        (e.g. a config change) is visible to the next.
+        Tasks on different devices run in parallel, bounded by MAX_PARALLEL_TASKS.
+
+        Returns a tuple of (results, updated_task_index).
+        """
+        # Group tasks by the device they execute on
+        device_groups: Dict[str, List[NetworkTask]] = {}
+        for task in tasks:
+            device_groups.setdefault(task.execution_device, []).append(task)
+
+        results: List[TestResult] = []
+
+        # Semaphore caps the number of devices running concurrently.
+        semaphore = asyncio.Semaphore(config.MAX_PARALLEL_TASKS)
+        # Lock ensures each task claims a unique progress slot — prevents two concurrent
+        # device coroutines from reading the same task_index before either increments it.
+        counter_lock = asyncio.Lock()
+
+        async def _run_device_group(device_id: str, device_tasks: List[NetworkTask]) -> List[TestResult]:
+            nonlocal task_index
+            logger.info(
+                f"Running {len(device_tasks)} task(s) sequentially on device '{device_id}'"
+                + (f" (group: {group_name})" if group_name else "")
+            )
+            async with semaphore:
+                device_results = []
+                for task in device_tasks:
+                    async with counter_lock:
+                        completed_before = task_index
+                        task_index += 1
+                    try:
+                        result = await self._execute_single_task(
+                            task, job, completed_before, total_tasks, group_name, callback_url
+                        )
+                        device_results.append(result)
+                    except Exception as exc:
+                        logger.error(f"Task {task.task_id} on device '{device_id}' raised: {exc}")
+                        device_results.append(self._make_error_result(task))
+                return device_results
+
+        if len(device_groups) > 1:
+            logger.info(
+                f"Running tasks across {len(device_groups)} devices in parallel"
+                + (f" (group: {group_name})" if group_name else "")
+            )
+
+        device_outcomes = await asyncio.gather(
+            *[_run_device_group(did, dtasks) for did, dtasks in device_groups.items()],
+            return_exceptions=True,
+        )
+        for (device_id, device_tasks), outcome in zip(device_groups.items(), device_outcomes):
+            if isinstance(outcome, Exception):
+                logger.error(f"Device group '{device_id}' raised an exception: {outcome}")
+                for task in device_tasks:
+                    results.append(self._make_error_result(task))
+            else:
+                results.extend(outcome)
+
+        return results, task_index
+
     async def _execute_rescue_tasks(self, rescue_tasks: list, job: GradingJob):
         """Execute rescue tasks when a group fails"""
         logger.info("Executing rescue tasks...")

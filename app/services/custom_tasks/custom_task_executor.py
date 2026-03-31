@@ -380,7 +380,8 @@ class CustomTaskExecutor:
             )
 
             if requires_network_connection:
-                async with self.nornir_service.custom_task_connection(device_id) as handle:
+                job_id = parameters.get("job_id", "")
+                async with self.nornir_service.custom_task_connection(device_id, job_id) as handle:
                     context._conn_handle = handle
                     command_results = await execute_command_loop()
             else:

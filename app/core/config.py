@@ -39,6 +39,9 @@ class Config:
     CUSTOM_TASK_REGISTRY_DIR: str = os.getenv("CUSTOM_TASK_REGISTRY_DIR", "custom_tasks")
     STRICT_MODE: bool = os.getenv("STRICT_MODE", "true").lower() == "true"
 
+    # Parallel execution concurrency limit (applies to both independent tasks and stateful sessions)
+    MAX_PARALLEL_TASKS: int = max(1, int(os.getenv("MAX_PARALLEL_TASKS", "10")))
+
     # Template Test Sandbox Quotas
     TEMPLATE_TEST_TIMEOUT: int = int(os.getenv("TEMPLATE_TEST_TIMEOUT", "60"))
     TEMPLATE_TEST_MAX_YAML_SIZE: int = int(os.getenv("TEMPLATE_TEST_MAX_YAML_SIZE", "51200"))  # 50 KB
