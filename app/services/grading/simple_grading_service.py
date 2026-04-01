@@ -199,6 +199,13 @@ class SimpleGradingService:
         logger.info(f"Part: {job.part.title}")
         if job.callback_url:
             logger.info(f"Using per-job callback URL: {callback_url}")
+
+        # Notify backend that this job has transitioned from queued to running.
+        if callback_url:
+            try:
+                await self.api_client.notify_job_started(callback_url, job.job_id)
+            except Exception as e:
+                logger.warning(f"Failed to send job started notification: {e}")
         
         # Send progress update
         if callback_url:
