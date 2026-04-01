@@ -17,11 +17,19 @@ from typing import Dict, Any, List, Optional
 
 
 def validate_target_ip(ip: str) -> str:
-    """DEEP2-3: Validate and normalize an IP address. Raises ValueError if invalid."""
+    """Validate and normalize an IP address or hostname/FQDN. Raises ValueError if invalid."""
+    if not ip or not isinstance(ip, str):
+        raise ValueError(f"Invalid target: {ip}")
+    # Try numeric IP first
     try:
         return str(ipaddress.ip_address(ip))
     except ValueError:
-        raise ValueError(f"Invalid IP address: {ip}")
+        pass
+    # Accept hostnames and FQDNs (letters, digits, hyphens, dots)
+    hostname_re = re.compile(r'^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$')
+    if hostname_re.match(ip):
+        return ip
+    raise ValueError(f"Invalid IP address or hostname: {ip}")
 from dataclasses import dataclass
 from pathlib import Path
 import re

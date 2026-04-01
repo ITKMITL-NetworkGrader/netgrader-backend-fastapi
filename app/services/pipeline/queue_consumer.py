@@ -168,7 +168,7 @@ class QueueConsumer:
                     
                 # Perform cleanup
                 logger.info("Running periodic cleanup of old files")
-                self.grading_service.cleanup_old_files()
+                await self.grading_service.cleanup_old_files()
                 
             except asyncio.CancelledError:
                 logger.info("Periodic cleanup task cancelled")
