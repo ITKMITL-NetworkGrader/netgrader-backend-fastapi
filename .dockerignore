@@ -1,0 +1,61 @@
+# Environment files - CRITICAL!
+.env
+.env.*
+*.env
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info
+dist
+build
+pip-log.txt
+pip-delete-this-directory.txt
+.pytest_cache
+.coverage
+htmlcov
+
+# Virtual environments
+venv
+env
+ENV
+
+# IDEs
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Docker
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# CI/CD
+Jenkinsfile
+Jenkinsfile.manual
+.github
+
+# Documentation
+*.md
+README.md
+docs
+
+# Logs
+*.log
+logs
+
+# OS
+.DS_Store
+Thumbs.db
