@@ -108,6 +108,10 @@ def health_check():
         }
     }
 
+@app.get("/sentry-debug")
+async def trigger_sentry_error():
+    division_by_zero = 1 / 0
+
 @app.post("/jobs/queue")
 async def queue_grading_job(job: GradingJob):
     """Add a grading job to the RabbitMQ queue"""
