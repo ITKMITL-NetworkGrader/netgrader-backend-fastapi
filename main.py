@@ -11,6 +11,18 @@ from app.services.grading.simple_grading_service import SimpleGradingService
 from app.services.custom_tasks.custom_task_registry import CustomTaskValidationError, CustomTaskDefinition
 from app.services.pipeline.queue_consumer import consumer, start_consumer, stop_consumer
 from app.core.config import config
+import sentry_sdk
+
+if config.SENTRY_DSN:
+    sentry_sdk.init(
+        dsn=config.SENTRY_DSN,
+        environment=config.SENTRY_ENVIRONMENT,
+        traces_sample_rate=config.SENTRY_TRACES_SAMPLE_RATE,
+        profile_session_sample_rate=config.SENTRY_PROFILE_SESSION_SAMPLE_RATE,
+        profile_lifecycle=config.SENTRY_PROFILE_LIFECYCLE,
+        enable_logs=config.SENTRY_ENABLE_LOGS,
+        send_default_pii=config.SENTRY_SEND_DEFAULT_PII,
+    )
 
 # Configure logging
 logging.basicConfig(

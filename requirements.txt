@@ -67,3 +67,6 @@ netmiko>=4.4.0
 
 # Optional SNMP support for device detection
 pysnmp>=4.4.0
+
+# Error monitoring
+sentry-sdk[fastapi]>=2.0.0
