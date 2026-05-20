@@ -2,8 +2,9 @@ pipeline {
     agent any
 
     environment {
-        COMPOSE_DIR = '/home/netgrader/netgrader/netgrader-container'
-        REPLICAS    = '8'
+        COMPOSE_DIR     = '/home/netgrader/netgrader/netgrader-container'
+        REPLICAS        = '8'
+        DISCORD_WEBHOOK = credentials('discord-webhook-fastapi')
     }
 
     stages {
@@ -19,7 +20,18 @@ pipeline {
                     env.BACKUP_IMAGE   = "netgrader-backend-fastapi-backup-${env.ENV_NAME}-${env.BUILD_NUMBER}"
                     env.PREVIOUS_IMAGE = "netgrader-backend-fastapi-backup-${env.ENV_NAME}-${(env.BUILD_NUMBER.toInteger() - 1)}"
                     env.SCALE          = isProd ? env.REPLICAS : '1'
-                    echo "[SETUP] Branch: ${branch} | Env: ${env.ENV_NAME} | Image: ${env.IMAGE_NAME} | Replicas: ${env.SCALE}"
+
+                    def triggeredBy = 'Unknown'
+                    for (cause in currentBuild.getBuildCauses()) {
+                        if (cause._class?.contains('UserIdCause')) {
+                            triggeredBy = cause.userName ?: cause.userId ?: 'Unknown'
+                        } else if (cause._class?.contains('SCMTrigger') || cause._class?.contains('GitHubPush') || cause._class?.contains('BranchIndex')) {
+                            triggeredBy = sh(script: "git log -1 --pretty=format:'%an'", returnStdout: true).trim()
+                        }
+                    }
+                    env.TRIGGERED_BY = triggeredBy
+
+                    echo "[SETUP] Branch: ${branch} | Env: ${env.ENV_NAME} | Image: ${env.IMAGE_NAME} | Replicas: ${env.SCALE} | Triggered by: ${env.TRIGGERED_BY}"
                 }
             }
         }
@@ -126,10 +138,23 @@ pipeline {
 
     post {
         success {
-            echo "Backend FastAPI [${env.BRANCH_NAME}] deployed successfully. ${env.SCALE} replicas. Build #${env.BUILD_NUMBER}"
+            script {
+                def envLabel = env.ENV_NAME.toUpperCase()
+                def duration = currentBuild.durationString.replace(' and counting', '')
+                def payload = """{"content": "**${envLabel} - NetGrader FastAPI Deployment - SUCCESS ✅**\\n🌿 Branch: `${env.BRANCH_NAME}`\\n🏷️ Image: `${env.IMAGE_NAME}`\\n🔢 Build: `#${env.BUILD_NUMBER}`\\n⏱️ Duration: `${duration}`\\n👤 Triggered by: `${env.TRIGGERED_BY}`"}"""
+                writeFile file: '/tmp/discord_fastapi.json', text: payload
+                sh "curl -s -X POST '${env.DISCORD_WEBHOOK}' -H 'Content-Type: application/json' -d @/tmp/discord_fastapi.json"
+                echo "Backend FastAPI [${env.BRANCH_NAME}] deployed successfully. ${env.SCALE} replicas. Build #${env.BUILD_NUMBER}"
+            }
         }
         failure {
             script {
+                def envLabel = env.ENV_NAME?.toUpperCase() ?: 'UNKNOWN'
+                def duration = currentBuild.durationString.replace(' and counting', '')
+                def payload = """{"content": "**${envLabel} - NetGrader FastAPI Deployment - FAILED ❌**\\n🌿 Branch: `${env.BRANCH_NAME}`\\n🏷️ Image: `${env.IMAGE_NAME}`\\n🔢 Build: `#${env.BUILD_NUMBER}`\\n⏱️ Duration: `${duration}`\\n👤 Triggered by: `${env.TRIGGERED_BY}`"}"""
+                writeFile file: '/tmp/discord_fastapi.json', text: payload
+                sh "curl -s -X POST '${env.DISCORD_WEBHOOK}' -H 'Content-Type: application/json' -d @/tmp/discord_fastapi.json"
+
                 echo "DEPLOYMENT FAILED - INITIATING ROLLBACK"
                 if (env.BUILD_NUMBER.toInteger() > 1) {
                     try {
