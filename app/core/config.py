@@ -56,6 +56,15 @@ class Config:
 
     BATFISH_API: str = os.getenv("BATFISH_API", "http://localhost:8080")
 
+    # Sentry Configuration
+    SENTRY_DSN: str = os.getenv("SENTRY_DSN", "")
+    SENTRY_ENVIRONMENT: str = os.getenv("SENTRY_ENVIRONMENT", "development")
+    SENTRY_TRACES_SAMPLE_RATE: float = float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "1.0"))
+    SENTRY_PROFILE_SESSION_SAMPLE_RATE: float = float(os.getenv("SENTRY_PROFILE_SESSION_SAMPLE_RATE", "1.0"))
+    SENTRY_PROFILE_LIFECYCLE: str = os.getenv("SENTRY_PROFILE_LIFECYCLE", "trace")
+    SENTRY_ENABLE_LOGS: bool = os.getenv("SENTRY_ENABLE_LOGS", "true").lower() == "true"
+    SENTRY_SEND_DEFAULT_PII: bool = os.getenv("SENTRY_SEND_DEFAULT_PII", "true").lower() == "true"
+
     def validate_production(self):
         """Fail startup if insecure defaults are used in production."""
         import sys
