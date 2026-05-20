@@ -12,14 +12,14 @@ pipeline {
                 script {
                     def branch = env.BRANCH_NAME ?: 'main'
                     def isProd = (branch == 'main')
-                    def envName = isProd ? 'prod' : 'dev'
-                    env.IMAGE_NAME     = "netgrader-backend-fastapi:${envName}"
+                    env.ENV_NAME       = isProd ? 'prod' : 'dev'
+                    env.IMAGE_NAME     = "netgrader-backend-fastapi:${env.ENV_NAME}"
                     env.SERVICE_NAME   = isProd ? 'backend-fastapi' : 'backend-fastapi-dev'
                     env.COMPOSE_FILE   = isProd ? 'docker-compose.yml' : 'docker-compose-dev.yml'
-                    env.BACKUP_IMAGE   = "netgrader-backend-fastapi-backup-${envName}-${env.BUILD_NUMBER}"
-                    env.PREVIOUS_IMAGE = "netgrader-backend-fastapi-backup-${envName}-${(env.BUILD_NUMBER.toInteger() - 1)}"
+                    env.BACKUP_IMAGE   = "netgrader-backend-fastapi-backup-${env.ENV_NAME}-${env.BUILD_NUMBER}"
+                    env.PREVIOUS_IMAGE = "netgrader-backend-fastapi-backup-${env.ENV_NAME}-${(env.BUILD_NUMBER.toInteger() - 1)}"
                     env.SCALE          = isProd ? env.REPLICAS : '1'
-                    echo "[SETUP] Branch: ${branch} | Env: ${envName} | Image: ${env.IMAGE_NAME} | Replicas: ${env.SCALE}"
+                    echo "[SETUP] Branch: ${branch} | Env: ${env.ENV_NAME} | Image: ${env.IMAGE_NAME} | Replicas: ${env.SCALE}"
                 }
             }
         }
@@ -116,7 +116,7 @@ pipeline {
             steps {
                 script {
                     sh """
-                        docker images | grep 'netgrader-backend-fastapi-backup-${env.BRANCH_NAME}' | awk '{print \$1\":\"\$2}' | sort -r | tail -n +6 | xargs -r docker rmi || true
+                        docker images | grep 'netgrader-backend-fastapi-backup-${env.ENV_NAME}' | awk '{print \$1\":\"\$2}' | sort -r | tail -n +6 | xargs -r docker rmi || true
                     """
                     sh 'docker image prune -f'
                 }
